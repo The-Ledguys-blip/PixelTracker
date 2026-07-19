@@ -1,0 +1,1705 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<title>PixelTracker</title>
+<style>
+  :root {
+    color-scheme: light;
+    --accent: #e6007e;
+    --bg: #f7f7f8;
+    --panel-bg: #ffffff;
+    --border: #e2e2e5;
+    --border-soft: #eeeeee;
+    --text: #1c1c1e;
+    --text-muted: #666666;
+    --text-faint: #999999;
+    --input-bg: #ffffff;
+    --hover-bg: #f0f0f2;
+    --chip-bg: #fafafa;
+    --cell-bg: #eeeeee;
+    --cell-empty: #f2f2f4;
+    --grid-line: #dcdce0;
+    --active-bg: #fdf0f7;
+  }
+  body.dark {
+    color-scheme: dark;
+    --bg: #17171a;
+    --panel-bg: #1f1f23;
+    --border: #333338;
+    --border-soft: #2c2c30;
+    --text: #eaeaec;
+    --text-muted: #a3a3ab;
+    --text-faint: #77777f;
+    --input-bg: #2a2a2f;
+    --hover-bg: #2a2a2f;
+    --chip-bg: #26262b;
+    --cell-bg: #2a2a2f;
+    --cell-empty: #303035;
+    --grid-line: #3c3c42;
+    --active-bg: #331226;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    transition: background .15s, color .15s;
+  }
+  .menubar {
+    display: flex; align-items: center; gap: 2px;
+    background: var(--panel-bg); border-bottom: 1px solid var(--border);
+    padding: 3px 10px; position: relative; z-index: 30;
+  }
+  .menu-wrap { position: relative; }
+  .menu-trigger {
+    background: transparent; border: 1px solid transparent; padding: 6px 12px;
+    font-size: 12.5px; font-weight: 600; border-radius: 5px;
+  }
+  .menu-trigger:hover, .menu-trigger.open { background: var(--hover-bg); }
+  .menu-dropdown {
+    display: none; flex-direction: column; gap: 2px;
+    position: absolute; top: 100%; left: 0; margin-top: 4px;
+    background: var(--panel-bg); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 10px 28px rgba(0,0,0,.18); padding: 6px; min-width: 240px; z-index: 31;
+  }
+  .menu-dropdown.show { display: flex; }
+  .menu-dropdown button {
+    text-align: left; border: none; background: transparent; padding: 8px 10px;
+    border-radius: 6px; font-size: 12.5px;
+  }
+  .menu-dropdown button:hover { background: var(--hover-bg); }
+  .menu-dropdown hr { border: none; border-top: 1px solid var(--border-soft); margin: 4px 2px; width: 100%; }
+
+  header.app-header {
+    padding: 12px 18px;
+    background: var(--panel-bg);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  header.app-header h1 { font-size: 16px; margin: 0; font-weight: 700; }
+
+  select, input, textarea, button {
+    font-family: inherit;
+    font-size: 12.5px;
+    color: var(--text);
+  }
+  select, input[type=text], input[type=number], input[type=date], textarea {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 8px;
+    background: var(--input-bg);
+    width: 100%;
+  }
+  button {
+    border: 1px solid var(--border);
+    background: var(--input-bg);
+    border-radius: 6px;
+    padding: 6px 11px;
+    cursor: pointer;
+    color: var(--text);
+  }
+  button:hover { background: var(--hover-bg); }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.primary:hover { background: #c40068; }
+  button.danger { color: #e5486b; border-color: #6b2530; }
+  body:not(.dark) button.danger { color: #c0142c; border-color: #f0b3bd; }
+  button.danger:hover { background: #fdecef; }
+  body.dark button.danger:hover { background: #3a1c22; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.small { padding: 3px 8px; font-size: 10.5px; }
+
+  main {
+    display: grid;
+    grid-template-columns: 250px 1fr 320px;
+    gap: 14px;
+    padding: 14px 18px 20px;
+    align-items: start;
+  }
+  @media (max-width: 1100px) {
+    main { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    min-width: 0; /* laat het grid-item krimpen tot zijn kolombreedte i.p.v. mee te groeien met breed canvas-inhoud */
+  }
+  .panel h2 {
+    font-size: 12px;
+    margin: 0 0 10px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  /* Left: module database */
+  #moduleList { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; max-height: 260px; overflow-y: auto; }
+  .module-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    border: 1px solid var(--border-soft); border-radius: 7px; padding: 7px 9px; cursor: pointer;
+  }
+  .module-item:hover { background: var(--hover-bg); }
+  .module-item.active { border-color: var(--accent); background: var(--active-bg); }
+  .module-item .mname { font-weight: 600; font-size: 12px; }
+  .module-item .mmeta { font-size: 10.5px; color: var(--text-muted); }
+  .module-item .mcount {
+    font-size: 10px; background: var(--chip-bg); border: 1px solid var(--border-soft); border-radius: 8px; padding: 1px 7px; color: var(--text-muted); flex-shrink: 0;
+  }
+  .module-item .mdel { color: #c0142c; font-size: 13px; padding: 0 4px; flex-shrink: 0; }
+  .module-empty { font-size: 11.5px; color: var(--text-faint); padding: 8px 0; }
+
+  .left-col { display: flex; flex-direction: column; gap: 14px; min-height: calc(100vh - 170px); }
+  .left-col .panel.db-panel { flex: 1; display: flex; flex-direction: column; }
+  .left-col .panel.db-panel #moduleList { flex: 1; overflow-y: auto; max-height: none; }
+  .panel h2 .tab-count {
+    font-size: 10px; font-weight: 600; background: var(--chip-bg); border: 1px solid var(--border-soft);
+    border-radius: 8px; padding: 1px 7px; color: var(--text-muted);
+  }
+
+  .field { margin-bottom: 8px; display: flex; flex-direction: column; gap: 3px; }
+  .field label { font-size: 11px; color: var(--text-muted); }
+  .req { color: var(--accent); font-weight: 700; }
+  .field-row { display: flex; gap: 8px; }
+  .field-row .field { flex: 1; }
+  .calc-hint { font-size: 10px; color: var(--text-faint); margin-top: -2px; }
+  .batch-check {
+    display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--text-muted);
+    margin: 2px 0 10px; cursor: pointer;
+  }
+  .batch-check input { width: auto; accent-color: var(--accent); }
+
+  /* Middle: canvas */
+  .toolbar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;
+  }
+  .toolbar .spacer { flex: 1; }
+  .zoom-wrap { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); }
+  .module-title { font-size: 14px; font-weight: 700; }
+  .module-sub { font-size: 11px; color: var(--text-muted); }
+
+  .canvas-scroll {
+    overflow: auto;
+    max-height: 560px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--chip-bg);
+    padding: 8px;
+  }
+  .canvas-grid-wrap {
+    display: grid;
+    grid-template-columns: 30px auto;
+    grid-template-rows: 20px auto;
+    width: fit-content;
+  }
+  .canvas-corner { position: sticky; top: 0; left: 0; z-index: 5; background: var(--chip-bg); }
+  #rulerTop { position: sticky; top: 0; z-index: 4; display: block; }
+  #rulerLeft { position: sticky; left: 0; z-index: 3; display: block; }
+  #pixelCanvas { display: block; cursor: crosshair; background: var(--cell-bg); touch-action: none; }
+  .no-module { padding: 40px 10px; text-align: center; color: var(--text-faint); font-size: 12.5px; }
+
+  #legendRow { display: flex; gap: 8px; flex-wrap: wrap; }
+  .legend-chip {
+    display: flex; align-items: center; gap: 6px; font-size: 11px; background: var(--chip-bg);
+    border: 1px solid var(--border-soft); border-radius: 20px; padding: 4px 10px;
+  }
+  .legend-chip .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .legend-empty { font-size: 11.5px; color: var(--text-faint); }
+
+  /* Right: repairs list + database table */
+  table.repairtable, table.moduletable { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  table.repairtable th, table.repairtable td,
+  table.moduletable th, table.moduletable td {
+    text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--border-soft); vertical-align: middle;
+  }
+  table.repairtable th, table.moduletable th { color: var(--text-muted); font-weight: 500; font-size: 10.5px; }
+  table.moduletable tbody tr:hover { background: var(--hover-bg); cursor: pointer; }
+  .swatch { width: 13px; height: 13px; border-radius: 3px; display: inline-block; border: 1px solid rgba(128,128,128,.35); }
+  .badge { font-size: 9.5px; padding: 2px 6px; border-radius: 10px; font-weight: 600; display: inline-block; }
+  .badge.open { background: #fde8ea; color: #c0142c; }
+  .badge.resolved { background: #e6f7ec; color: #1e8a4c; }
+  body.dark .badge.open { background: #3a1c22; color: #ff8fa3; }
+  body.dark .badge.resolved { background: #143621; color: #6bd696; }
+  .row-actions { display: flex; gap: 4px; }
+  .badge.current { background: var(--accent); color: #fff; }
+
+  .stats { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .stat { background: var(--chip-bg); border: 1px solid var(--border-soft); border-radius: 8px; padding: 7px 10px; min-width: 70px; }
+  .stat .num { font-size: 16px; font-weight: 700; }
+  .stat .label { font-size: 10px; color: var(--text-muted); }
+
+  .db-section { margin: 0 18px 40px; }
+
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.45);
+    display: none; align-items: center; justify-content: center; z-index: 50;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: var(--panel-bg); border-radius: 12px; padding: 18px 20px; width: 360px; max-width: 92vw;
+    box-shadow: 0 10px 40px rgba(0,0,0,.35); max-height: 90vh; overflow-y: auto;
+    border: 1px solid var(--border);
+  }
+  .modal h3 { margin: 0 0 12px; font-size: 14px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .hint { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+  .color-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .color-dot { width: 20px; height: 20px; border-radius: 5px; cursor: pointer; border: 2px solid transparent; }
+  .color-dot.active { border-color: var(--text); }
+  input[type=color] { width: 34px; height: 26px; padding: 2px; background: var(--input-bg); }
+
+  .theme-toggle {
+    display: flex; align-items: center; gap: 6px;
+  }
+
+  footer.app-footer { text-align: center; color: var(--text-faint); font-size: 10.5px; padding: 6px 0 20px; }
+
+  @media print {
+    .menubar, header.app-header, .toolbar, .row-actions, .modal-overlay, button, #addModuleForm { display: none !important; }
+    main { grid-template-columns: 1fr 1fr; }
+    body { background: #fff; color: #000; }
+  }
+
+  /* ---------- A3-exportlayout (grid + reparatielijst), volgt het huidige thema ---------- */
+  #printExportRoot {
+    display: none;
+    --print-bg: #ffffff;
+    --print-text: #111111;
+    --print-muted: #555555;
+    --print-border: #cccccc;
+    --print-table-border: #dddddd;
+  }
+  @page export-a3 { size: A3 landscape; margin: 12mm; }
+  .print-page {
+    page: export-a3;
+    width: 396mm;
+    height: 273mm;
+    display: flex;
+    gap: 10mm;
+    background: var(--print-bg);
+    color: var(--print-text);
+    box-sizing: border-box;
+    page-break-after: always;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  .print-page:last-child { page-break-after: auto; }
+  .print-left {
+    flex: 0 0 68%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--print-border);
+    padding: 2mm;
+    min-width: 0;
+    min-height: 0;
+  }
+  .print-left img { width: 100%; height: 100%; object-fit: contain; }
+  .print-right { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .print-right h1 { font-size: 15pt; margin: 0 0 2mm; color: var(--print-text); }
+  .print-meta { font-size: 8.5pt; color: var(--print-muted); margin-bottom: 5mm; }
+  .print-right table { width: 100%; border-collapse: collapse; font-size: 8pt; }
+  .print-right th, .print-right td { border-bottom: 1px solid var(--print-table-border); padding: 1.5mm 1mm; text-align: left; color: var(--print-text); }
+  .print-right th { color: var(--print-muted); font-weight: 600; }
+  .print-swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; border: 1px solid rgba(128,128,128,.4); }
+
+  @media print {
+    body.print-export-mode > *:not(#printExportRoot) { display: none !important; }
+    body.print-export-mode #printExportRoot { display: block !important; background: var(--print-bg); }
+  }
+</style>
+</head>
+<body>
+
+<div class="menubar">
+  <div class="menu-wrap">
+    <button class="menu-trigger" id="fileMenuBtn">Bestand ▾</button>
+    <div class="menu-dropdown" id="fileMenuDropdown">
+      <button id="menuSaveJson">💾 Database opslaan (.json)</button>
+      <button id="menuLoadJson">📂 Database laden (.json)</button>
+      <hr>
+      <button id="menuExportCsv">📄 Reparaties exporteren (CSV)</button>
+      <button id="menuExportSelectedA3">🖨️ Exporteren: geselecteerde module (A3)</button>
+      <button id="menuExportDatabaseA3">🖨️ Exporteren: hele database (A3)</button>
+      <button id="menuPrint">🖨️ Print / PDF (schermweergave)</button>
+      <hr>
+      <button id="menuNewDb">🗑️ Nieuwe lege database</button>
+    </div>
+  </div>
+</div>
+<input type="file" id="jsonFileInput" accept="application/json,.json" style="display:none">
+
+<header class="app-header">
+  <h1>PixelTracker</h1>
+  <div style="display:flex; gap:8px; align-items:center;">
+    <button id="themeToggleBtn">🌙 Donkere modus</button>
+  </div>
+</header>
+
+<main>
+  <!-- LEFT: module toevoegen (boven) + database (onder, vult de rest van de pagina) -->
+  <div class="left-col">
+    <div class="panel">
+      <h2>+ Module toevoegen</h2>
+      <div id="addModuleForm">
+        <div class="field">
+          <label>Bedrijf (optioneel)</label>
+          <input type="text" id="m_company" placeholder="Bedrijf">
+        </div>
+        <div class="field">
+          <label>Naam / label <span class="req">*</span></label>
+          <input type="text" id="m_name" placeholder="bv. Module A3">
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Breedte (px) <span class="req">*</span></label>
+            <input type="text" inputmode="decimal" class="calc-input" id="m_width" value="192">
+          </div>
+          <div class="field">
+            <label>Hoogte (px) <span class="req">*</span></label>
+            <input type="text" inputmode="decimal" class="calc-input" id="m_height" value="192">
+          </div>
+        </div>
+        <div class="calc-hint">Tip: je mag rekenen, bv. 192/2 of 96*2</div>
+        <div class="field">
+          <label>Locatie / SN (optioneel — scan of typ)</label>
+          <input type="text" id="m_sn" placeholder="bv. SN 000205, of scan barcode">
+        </div>
+        <label class="batch-check">
+          <input type="checkbox" id="m_batch">
+          Batch — telt het serienummer automatisch door na toevoegen
+        </label>
+        <button id="addModuleBtn" class="primary" style="width:100%;">Toevoegen</button>
+      </div>
+    </div>
+
+    <div class="panel db-panel">
+      <h2>Database <span class="tab-count" id="dbTabCount">0</span></h2>
+      <input type="text" id="dbSearch" placeholder="🔍 Zoek op naam..." style="margin-bottom:8px;">
+      <div id="moduleList"></div>
+    </div>
+  </div>
+
+  <!-- MIDDLE: canvas + legend -->
+  <div class="panel">
+    <div class="toolbar">
+      <div>
+        <div class="module-title" id="moduleTitle">Geen module geselecteerd</div>
+        <div class="module-sub" id="moduleSub"></div>
+      </div>
+      <div class="spacer"></div>
+      <div class="zoom-wrap">Zoom<input type="range" id="zoomRange" min="2" max="29" value="29"></div>
+      <button id="clearSelBtn" disabled>Selectie wissen</button>
+      <button id="addRepairBtn" class="primary" disabled>+ Reparatie (0 px)</button>
+    </div>
+
+    <div class="hint" style="margin-bottom:10px;">Klik en sleep voor een blokselectie · shift+klik voegt losse pixels toe · <strong>Ctrl+A</strong> = Pixel (roze, opgelost) · <strong>Ctrl+B</strong> = Pad (blauw, opgelost) · <strong>Esc</strong> = selectie opheffen · <strong>Ctrl+Z</strong> = ongedaan maken · <strong>Ctrl+Shift+Z</strong> = opnieuw</div>
+
+    <div class="stats" id="statsRow"></div>
+
+    <div class="canvas-scroll" id="canvasScroll">
+      <div class="canvas-grid-wrap" id="canvasGridWrap">
+        <div class="canvas-corner" id="canvasCorner"></div>
+        <canvas id="rulerTop"></canvas>
+        <canvas id="rulerLeft"></canvas>
+        <canvas id="pixelCanvas" width="0" height="0"></canvas>
+      </div>
+      <div class="no-module" id="noModuleMsg">Voeg links een module toe of selecteer er een om het pixelraster te zien.</div>
+    </div>
+
+    <h2 style="margin-top:14px;">Legenda</h2>
+    <div id="legendRow"><span class="legend-empty">Nog geen reparaties gelogd.</span></div>
+  </div>
+
+  <!-- RIGHT: repairs list -->
+  <div class="panel">
+    <h2>Reparaties</h2>
+    <table class="repairtable" id="repairTable">
+      <thead>
+        <tr><th></th><th>Wat</th><th>Wanneer</th><th>Wie</th><th></th></tr>
+      </thead>
+      <tbody id="repairTbody"></tbody>
+    </table>
+    <div id="repairEmpty" class="hint">Klik pixels aan in het midden en gebruik "+ Reparatie" om een melding te loggen.</div>
+  </div>
+</main>
+
+<!-- FULL WIDTH: all-modules database -->
+<div class="panel db-section">
+  <h2>Alle modules — database</h2>
+  <table class="moduletable" id="allModulesTable">
+    <thead>
+      <tr><th></th><th>Company</th><th>Naam</th><th>Afmeting</th><th>Locatie / SN</th><th>Reparaties</th><th>Open px</th><th>Laatst gewijzigd</th><th></th></tr>
+    </thead>
+    <tbody id="allModulesTbody"></tbody>
+  </table>
+  <div id="allModulesEmpty" class="hint">Nog geen modules toegevoegd.</div>
+</div>
+
+<footer class="app-footer">PixelTracker — gegevens worden lokaal in deze browser bewaard</footer>
+
+<div id="printExportRoot"></div>
+
+<!-- Add/edit repair modal -->
+<div class="modal-overlay" id="repairModalOverlay">
+  <div class="modal">
+    <h3 id="repairModalTitle">Reparatie toevoegen</h3>
+    <div class="field"><label id="pixelsLabel">Geselecteerde pixels</label></div>
+    <div class="field">
+      <label>Wat (type reparatie)</label>
+      <select id="r_type">
+        <option>Pixel</option>
+        <option>Pad</option>
+        <option>Module</option>
+        <option>Voeding</option>
+        <option>Kabel</option>
+        <option>Overig</option>
+      </select>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Wanneer (datum)</label><input type="date" id="r_date"></div>
+      <div class="field"><label>Wie (initialen)</label><input type="text" id="r_initials" placeholder="bv. KV"></div>
+    </div>
+    <div class="field">
+      <label>Status</label>
+      <select id="r_status"><option>Open</option><option>Opgelost</option></select>
+    </div>
+    <div class="field">
+      <label>Kleurcodering</label>
+      <div class="color-row" id="colorRow"></div>
+      <input type="color" id="r_color" value="#e6007e" style="margin-top:6px;">
+    </div>
+    <div class="field"><label>Notitie (optioneel)</label><textarea id="r_note" rows="2"></textarea></div>
+    <div class="modal-actions">
+      <button id="repairModalDelete" class="danger" style="display:none;">Verwijderen</button>
+      <div class="spacer"></div>
+      <button id="repairModalCancel">Annuleren</button>
+      <button id="repairModalSave" class="primary">Opslaan</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const STORAGE_KEY = 'pixelRepairApp_v2';
+  const THEME_KEY = 'pixelRepairApp_theme';
+  const PALETTE = ['#e6007e', '#2563eb', '#f59e0b', '#16a34a', '#7c3aed', '#dc2626', '#0891b2', '#65a30d'];
+
+  function uid() { return Math.random().toString(36).slice(2, 10); }
+  function todayISO() { return new Date().toISOString().slice(0, 10); }
+  function nowISO() { return new Date().toISOString(); }
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  }
+
+  function defaultState() {
+    const id = uid();
+    return {
+      activeId: id,
+      modules: {
+        [id]: {
+          id, company: 'Bazelmans', name: 'Absen 2.9mm', sn: 'SN 000205', width: 192, height: 192,
+          updatedAt: nowISO(),
+          repairs: [
+            { id: uid(), type: 'Pixel', date: '2025-01-21', initials: 'KV', status: 'Open',
+              color: '#e6007e', note: '', pixels: [[1, 190], [2, 190]] }
+          ]
+        }
+      }
+    };
+  }
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return defaultState();
+  }
+  function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+
+  let state = load();
+  let selected = new Set(); // "x,y"
+  let editingRepairId = null;
+  let cellSize = 29; // default: helemaal ingezoomd
+  let lastInitials = '';
+
+  function activeModule() { return state.modules[state.activeId] || null; }
+  function pxKey(x, y) { return x + ',' + y; }
+  function touchModule(m) { m.updatedAt = nowISO(); }
+
+  // ---------- Undo / redo (Ctrl+Z / Ctrl+Shift+Z) ----------
+  const UNDO_LIMIT = 50;
+  let undoStack = [];
+  let redoStack = [];
+  function pushHistory() {
+    undoStack.push(JSON.stringify(state));
+    if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+    redoStack.length = 0;
+  }
+  function restoreSnapshot(snapshot) {
+    state = JSON.parse(snapshot);
+    if (!state.activeId || !state.modules[state.activeId]) {
+      const ids = Object.keys(state.modules);
+      state.activeId = ids.length ? ids[0] : null;
+    }
+    selected.clear();
+    save();
+    renderAll();
+  }
+  function undo() {
+    if (undoStack.length === 0) return;
+    redoStack.push(JSON.stringify(state));
+    restoreSnapshot(undoStack.pop());
+  }
+  function redo() {
+    if (redoStack.length === 0) return;
+    undoStack.push(JSON.stringify(state));
+    restoreSnapshot(redoStack.pop());
+  }
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    if (e.key.toLowerCase() !== 'z') return;
+    const tag = (document.activeElement && document.activeElement.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    e.preventDefault();
+    if (e.shiftKey) redo();
+    else undo();
+  });
+
+  // ---------- High-quality (HiDPI) canvas sizing ----------
+  function setupHiDPICanvas(cnv, cssW, cssH) {
+    const dpr = window.devicePixelRatio || 1;
+    cnv.width = Math.max(1, Math.round(cssW * dpr));
+    cnv.height = Math.max(1, Math.round(cssH * dpr));
+    cnv.style.width = cssW + 'px';
+    cnv.style.height = cssH + 'px';
+    const c = cnv.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return c;
+  }
+  // Kies een label-interval zodat cijfertjes op het rooster nooit te dicht op elkaar staan
+  function pickInterval(size) {
+    const options = [1, 2, 5, 10, 20, 25, 50, 100, 200, 500, 1000];
+    for (const o of options) { if (o * size >= 30) return o; }
+    return 1000;
+  }
+
+  // ---------- Theme ----------
+  function applyTheme(mode) {
+    document.body.classList.toggle('dark', mode === 'dark');
+    document.getElementById('themeToggleBtn').textContent = mode === 'dark' ? '☀️ Lichte modus' : '🌙 Donkere modus';
+    localStorage.setItem(THEME_KEY, mode);
+  }
+  document.getElementById('themeToggleBtn').addEventListener('click', () => {
+    const isDark = document.body.classList.contains('dark');
+    applyTheme(isDark ? 'light' : 'dark');
+    renderCanvas();
+  });
+  applyTheme(localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark');
+
+  // ---------- Calculator-enabled fields ----------
+  function evaluateExpression(expr) {
+    const cleaned = expr.replace(/,/g, '.').trim();
+    if (!/^[0-9+\-*/().\s]+$/.test(cleaned) || cleaned === '') return null;
+    try {
+      // eslint-disable-next-line no-new-func
+      const result = Function('"use strict"; return (' + cleaned + ')')();
+      if (typeof result !== 'number' || !isFinite(result)) return null;
+      return result;
+    } catch (e) {
+      return null;
+    }
+  }
+  function bindCalcField(input, opts) {
+    const min = opts && opts.min !== undefined ? opts.min : 1;
+    const fallback = opts && opts.fallback !== undefined ? opts.fallback : min;
+    function resolve() {
+      const val = evaluateExpression(input.value);
+      if (val === null) {
+        input.value = fallback;
+        return;
+      }
+      const rounded = Math.max(min, Math.round(val));
+      input.value = rounded;
+    }
+    input.addEventListener('blur', resolve);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { resolve(); input.blur(); }
+    });
+  }
+  bindCalcField(document.getElementById('m_width'), { min: 1, fallback: 192 });
+  bindCalcField(document.getElementById('m_height'), { min: 1, fallback: 192 });
+
+  // ---------- Module database (left list, meest recent bovenaan) ----------
+  let dbSearchQuery = '';
+  document.getElementById('dbSearch').addEventListener('input', (e) => {
+    dbSearchQuery = e.target.value.trim().toLowerCase();
+    renderModuleList();
+  });
+
+  function renderModuleList() {
+    const list = document.getElementById('moduleList');
+    document.getElementById('dbTabCount').textContent = Object.keys(state.modules).length;
+    let mods = Object.values(state.modules).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+    if (mods.length === 0) {
+      list.innerHTML = '<div class="module-empty">Nog geen modules. Voeg er hieronder een toe.</div>';
+      return;
+    }
+    if (dbSearchQuery) {
+      mods = mods.filter(m => (m.name || '').toLowerCase().includes(dbSearchQuery));
+      if (mods.length === 0) {
+        list.innerHTML = `<div class="module-empty">Geen modules gevonden voor "${escapeHtml(dbSearchQuery)}".</div>`;
+        return;
+      }
+    }
+    list.innerHTML = '';
+    mods.forEach(m => {
+      const div = document.createElement('div');
+      div.className = 'module-item' + (m.id === state.activeId ? ' active' : '');
+      div.innerHTML = `
+        <div>
+          <div class="mname">${escapeHtml(m.name)}</div>
+          <div class="mmeta">${m.company ? escapeHtml(m.company) + ' · ' : ''}${m.width}×${m.height}px${m.sn ? ' · ' + escapeHtml(m.sn) : ''}</div>
+        </div>
+        <span class="mcount">${m.repairs.length}</span>
+        <span class="mdel" title="SN scannen/bewerken" data-action="scan-sn">📷</span>
+        <span class="mdel" title="Verwijderen">✕</span>
+      `;
+      div.addEventListener('click', (e) => {
+        if (e.target.dataset.action === 'scan-sn') { e.stopPropagation(); scanUpdateSn(m.id); return; }
+        if (e.target.classList.contains('mdel')) return;
+        selectModule(m.id);
+      });
+      div.querySelectorAll('.mdel').forEach(el => {
+        if (el.dataset.action !== 'scan-sn') {
+          el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteModule(m.id);
+          });
+        }
+      });
+      list.appendChild(div);
+    });
+  }
+
+  function selectModule(id) {
+    state.activeId = id;
+    selected.clear();
+    save();
+    renderAll();
+  }
+
+  function deleteModule(id) {
+    const m = state.modules[id];
+    if (!m) return;
+    if (!confirm(`Module "${m.name}" en het bijbehorende reparatie-overzicht verwijderen?`)) return;
+    pushHistory();
+    delete state.modules[id];
+    if (state.activeId === id) {
+      const remaining = Object.keys(state.modules);
+      state.activeId = remaining.length ? remaining[0] : null;
+    }
+    selected.clear();
+    save();
+    renderAll();
+  }
+
+  // Verhoogt het laatste cijferblok in een serienummer, met behoud van voorloopnullen
+  // (bv. "SN 000205" -> "SN 000206"). Voor gebruik met de Batch-optie.
+  function incrementSerial(sn) {
+    const m = sn.match(/(\d+)(?!.*\d)/);
+    if (!m) return sn;
+    const num = m[1];
+    const incremented = String(parseInt(num, 10) + 1).padStart(num.length, '0');
+    return sn.slice(0, m.index) + incremented + sn.slice(m.index + num.length);
+  }
+
+  function addModuleFromForm() {
+    const company = document.getElementById('m_company').value.trim();
+    const name = document.getElementById('m_name').value.trim();
+    const width = Math.max(1, parseInt(document.getElementById('m_width').value, 10) || 192);
+    const height = Math.max(1, parseInt(document.getElementById('m_height').value, 10) || 192);
+    const sn = document.getElementById('m_sn').value.trim();
+    const batchOn = document.getElementById('m_batch').checked;
+    if (!name) { alert('Geef de module een naam of label.'); document.getElementById('m_name').focus(); return; }
+    pushHistory();
+    const id = uid();
+    state.modules[id] = { id, company, name, width, height, sn, updatedAt: nowISO(), repairs: [] };
+    state.activeId = id;
+    document.getElementById('m_name').value = '';
+    selected.clear();
+    save();
+    renderAll();
+    // Klaarzetten voor de volgende scan/invoer — bij Batch telt het SN alvast door
+    if (batchOn && sn) {
+      document.getElementById('m_sn').value = incrementSerial(sn);
+      document.getElementById('m_name').focus();
+    } else {
+      document.getElementById('m_sn').value = '';
+      document.getElementById('m_sn').focus();
+    }
+  }
+  document.getElementById('addModuleBtn').addEventListener('click', addModuleFromForm);
+
+  // Barcodescanners gedragen zich als een toetsenbord en sturen na het scannen automatisch
+  // een Enter — daarmee wordt de module direct toegevoegd zonder dat er geklikt hoeft te worden.
+  document.getElementById('m_sn').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); addModuleFromForm(); }
+  });
+  document.getElementById('m_name').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('m_sn').focus(); }
+  });
+
+  // SN van een bestaande module (opnieuw) scannen/invoeren
+  function scanUpdateSn(moduleId) {
+    const m = state.modules[moduleId];
+    if (!m) return;
+    const val = prompt(`Scan of typ het serienummer voor "${m.name}":`, m.sn || '');
+    if (val === null) return;
+    pushHistory();
+    m.sn = val.trim();
+    touchModule(m);
+    save();
+    renderAll();
+  }
+
+  // ---------- All-modules database (bottom, full width) ----------
+  function renderAllModulesTable() {
+    const tbody = document.getElementById('allModulesTbody');
+    const empty = document.getElementById('allModulesEmpty');
+    const mods = Object.values(state.modules).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+    tbody.innerHTML = '';
+    if (mods.length === 0) {
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    mods.forEach(m => {
+      const openPx = m.repairs.filter(r => r.status === 'Open').reduce((s, r) => s + r.pixels.length, 0);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${m.id === state.activeId ? '<span class="badge current">actief</span>' : ''}</td>
+        <td>${escapeHtml(m.company || '—')}</td>
+        <td>${escapeHtml(m.name)}</td>
+        <td>${m.width} × ${m.height} px</td>
+        <td>${escapeHtml(m.sn || '—')}</td>
+        <td>${m.repairs.length}</td>
+        <td>${openPx}</td>
+        <td>${(m.updatedAt || '').slice(0, 10)}</td>
+      `;
+      const actionTd = document.createElement('td');
+      actionTd.className = 'row-actions';
+      const openBtn = document.createElement('button');
+      openBtn.className = 'small';
+      openBtn.textContent = 'Openen';
+      openBtn.addEventListener('click', (e) => { e.stopPropagation(); selectModule(m.id); window.scrollTo({top:0, behavior:'smooth'}); });
+      const scanBtn = document.createElement('button');
+      scanBtn.className = 'small';
+      scanBtn.textContent = '📷 SN';
+      scanBtn.title = 'SN scannen/bewerken';
+      scanBtn.addEventListener('click', (e) => { e.stopPropagation(); scanUpdateSn(m.id); });
+      const delBtn = document.createElement('button');
+      delBtn.className = 'small danger';
+      delBtn.textContent = 'Verwijderen';
+      delBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteModule(m.id); });
+      actionTd.appendChild(openBtn);
+      actionTd.appendChild(scanBtn);
+      actionTd.appendChild(delBtn);
+      tr.appendChild(actionTd);
+      tr.addEventListener('click', () => { selectModule(m.id); window.scrollTo({top:0, behavior:'smooth'}); });
+      tbody.appendChild(tr);
+    });
+  }
+
+  // ---------- Canvas (middle) ----------
+  const canvas = document.getElementById('pixelCanvas');
+  const canvasGridWrap = document.getElementById('canvasGridWrap');
+  const canvasScroll = document.getElementById('canvasScroll');
+  const rulerTop = document.getElementById('rulerTop');
+  const rulerLeft = document.getElementById('rulerLeft');
+  let ctx = canvas.getContext('2d');
+
+  function renderRulers(m, cssW, cssH, dark) {
+    const textColor = dark ? '#a3a3ab' : '#888888';
+    const bgColor = dark ? '#26262b' : '#fafafa';
+    // Toon elk pixelnummer (oneven en even).
+    const interval = 1;
+
+    const fontSize = Math.max(6, Math.min(9, cellSize - 2));
+
+    const topCtx = setupHiDPICanvas(rulerTop, cssW, 20);
+    topCtx.fillStyle = bgColor;
+    topCtx.fillRect(0, 0, cssW, 20);
+    topCtx.fillStyle = textColor;
+    topCtx.font = fontSize + 'px -apple-system, sans-serif';
+    topCtx.textAlign = 'center';
+    topCtx.textBaseline = 'middle';
+    for (let x = 0; x < m.width; x += interval) {
+      topCtx.fillText(String(x + 1), x * cellSize + cellSize / 2, 11);
+    }
+
+    const leftCtx = setupHiDPICanvas(rulerLeft, 30, cssH);
+    leftCtx.fillStyle = bgColor;
+    leftCtx.fillRect(0, 0, 30, cssH);
+    leftCtx.fillStyle = textColor;
+    leftCtx.font = fontSize + 'px -apple-system, sans-serif';
+    leftCtx.textAlign = 'center';
+    leftCtx.textBaseline = 'middle';
+    for (let y = 0; y < m.height; y += interval) {
+      leftCtx.fillText(String(y + 1), 15, y * cellSize + cellSize / 2);
+    }
+  }
+
+  function renderCanvas() {
+    const m = activeModule();
+    const noModuleMsg = document.getElementById('noModuleMsg');
+    document.getElementById('moduleTitle').textContent = m ? m.name : 'Geen module geselecteerd';
+    document.getElementById('moduleSub').textContent = m ? `${m.company ? m.company + ' · ' : ''}${m.width} × ${m.height} px${m.sn ? ' · ' + m.sn : ''}` : '';
+
+    if (!m) {
+      canvasGridWrap.style.display = 'none';
+      noModuleMsg.style.display = 'block';
+      return;
+    }
+    canvasGridWrap.style.display = 'grid';
+    noModuleMsg.style.display = 'none';
+
+    const cssW = m.width * cellSize;
+    const cssH = m.height * cellSize;
+    ctx = setupHiDPICanvas(canvas, cssW, cssH);
+
+    const dark = document.body.classList.contains('dark');
+    const bgColor = dark ? '#2a2a2f' : '#eeeeee';
+    const emptyColor = dark ? '#303035' : '#f2f2f4';
+    const minorGridColor = dark ? '#3c3c42' : '#dcdce0';
+    const majorGridColor = dark ? '#4a4a52' : '#c7c7cc';
+
+    renderRulers(m, cssW, cssH, dark);
+
+    const colorMap = new Map();
+    const resolvedSet = new Set();
+    m.repairs.forEach(rep => {
+      rep.pixels.forEach(([x, y]) => {
+        colorMap.set(pxKey(x, y), rep.color);
+        if (rep.status === 'Opgelost') resolvedSet.add(pxKey(x, y));
+      });
+    });
+
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(0, 0, cssW, cssH);
+
+    const showGrid = cellSize >= 4;
+    // Draw only changed pixels; empty cells are represented by the canvas background.
+    colorMap.forEach((color, key) => {
+      const [x, y] = key.split(',').map(Number);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = resolvedSet.has(key) ? 0.4 : 1;
+      ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+      ctx.globalAlpha = 1;
+    });
+
+    if (showGrid) {
+      // Bij verder inzoomen: elke losse pixel krijgt een dun randje voor extra scherpte/kwaliteit
+      if (cellSize >= 14) {
+        ctx.strokeStyle = minorGridColor;
+        ctx.lineWidth = 1;
+        for (let x = 0; x <= m.width; x++) {
+          ctx.beginPath();
+          ctx.moveTo(x * cellSize, 0);
+          ctx.lineTo(x * cellSize, cssH);
+          ctx.stroke();
+        }
+        for (let y = 0; y <= m.height; y++) {
+          ctx.beginPath();
+          ctx.moveTo(0, y * cellSize);
+          ctx.lineTo(cssW, y * cellSize);
+          ctx.stroke();
+        }
+      }
+      // Hoofdlijnen op de labelintervallen, corresponderend met de cijfertjes op de linialen
+      const interval = pickInterval(cellSize);
+      ctx.strokeStyle = majorGridColor;
+      ctx.lineWidth = 1;
+      for (let x = 0; x <= m.width; x += interval) {
+        ctx.beginPath();
+        ctx.moveTo(x * cellSize, 0);
+        ctx.lineTo(x * cellSize, cssH);
+        ctx.stroke();
+      }
+      for (let y = 0; y <= m.height; y += interval) {
+        ctx.beginPath();
+        ctx.moveTo(0, y * cellSize);
+        ctx.lineTo(cssW, y * cellSize);
+        ctx.stroke();
+      }
+    }
+
+    ctx.fillStyle = 'rgba(37, 99, 235, 0.45)';
+    ctx.strokeStyle = '#2563eb';
+    selected.forEach(key => {
+      const [x, y] = key.split(',').map(Number);
+      ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+      ctx.strokeRect(x * cellSize + 0.5, y * cellSize + 0.5, cellSize - 1, cellSize - 1);
+    });
+  }
+
+  let suppressNextClick = false;
+
+  canvas.addEventListener('click', (e) => {
+    if (suppressNextClick) { suppressNextClick = false; return; }
+    const m = activeModule();
+    if (!m || spacePanning) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.floor((e.clientX - rect.left) / cellSize);
+    const y = Math.floor((e.clientY - rect.top) / cellSize);
+    if (x < 0 || y < 0 || x >= m.width || y >= m.height) return;
+    const key = pxKey(x, y);
+    if (e.shiftKey) {
+      // Shift-klik: pixel toevoegen aan / verwijderen uit de selectie
+      if (selected.has(key)) selected.delete(key);
+      else selected.add(key);
+    } else {
+      // Gewone klik: enkel deze pixel selecteren (nogmaals klikken deselecteert)
+      if (selected.size === 1 && selected.has(key)) {
+        selected.clear();
+      } else {
+        selected = new Set([key]);
+      }
+    }
+    renderCanvas();
+    updateToolbar();
+  });
+
+  let zoomRaf = null;
+  function scheduleZoomRender() {
+    if (zoomRaf) return;
+    zoomRaf = requestAnimationFrame(() => {
+      zoomRaf = null;
+      renderCanvas();
+    });
+  }
+
+  document.getElementById('zoomRange').addEventListener('input', (e) => {
+    const next = parseInt(e.target.value, 10);
+    if (next === cellSize) return;
+    cellSize = next;
+    scheduleZoomRender();
+  });
+
+  document.getElementById('clearSelBtn').addEventListener('click', () => {
+    selected.clear();
+    renderCanvas();
+    updateToolbar();
+  });
+
+  // ---------- Klikken en slepen = rechthoekige (blok)selectie van pixels ----------
+  function cellFromEvent(e, m) {
+    const rect = canvas.getBoundingClientRect();
+    let x = Math.floor((e.clientX - rect.left) / cellSize);
+    let y = Math.floor((e.clientY - rect.top) / cellSize);
+    x = Math.max(0, Math.min(m.width - 1, x));
+    y = Math.max(0, Math.min(m.height - 1, y));
+    return { x, y };
+  }
+  function cellsInRect(x1, y1, x2, y2) {
+    const minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
+    const minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
+    const cells = [];
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) cells.push(pxKey(x, y));
+    }
+    return cells;
+  }
+
+  let dragSelecting = false;
+  let dragMoved = false;
+  let dragStartCell = null;
+  let dragBaseSelection = [];
+
+  function startDragSelect(e) {
+    if (spacePanning) return; // spatie+slepen = pannen heeft voorrang
+    const m = activeModule();
+    if (!m || (e.button !== undefined && e.button !== 0)) return;
+    dragSelecting = true;
+    dragMoved = false;
+    dragStartCell = cellFromEvent(e, m);
+    dragBaseSelection = e.shiftKey ? Array.from(selected) : [];
+  }
+  function moveDragSelect(e) {
+    if (!dragSelecting || !dragStartCell) return;
+    const m = activeModule();
+    if (!m) return;
+    const cur = cellFromEvent(e, m);
+    if (cur.x !== dragStartCell.x || cur.y !== dragStartCell.y) dragMoved = true;
+    if (!dragMoved) return;
+    const rectCells = cellsInRect(dragStartCell.x, dragStartCell.y, cur.x, cur.y);
+    selected = new Set([...dragBaseSelection, ...rectCells]);
+    renderCanvas();
+    updateToolbar();
+  }
+  function endDragSelect() {
+    if (!dragSelecting) return;
+    dragSelecting = false;
+    if (dragMoved) suppressNextClick = true;
+    dragStartCell = null;
+  }
+  canvas.addEventListener('pointerdown', startDragSelect);
+  canvas.addEventListener('mousedown', startDragSelect);
+  document.addEventListener('pointermove', moveDragSelect);
+  document.addEventListener('mousemove', moveDragSelect);
+  document.addEventListener('pointerup', endDragSelect);
+  document.addEventListener('mouseup', endDragSelect);
+
+  // ---------- Spatiebalk = handje (pannen/slepen), alleen als muis boven het rooster staat ----------
+  let mouseOverCanvas = false;
+  let spacePanning = false;
+  let isPanning = false;
+  let panStart = null;
+  let lastMouseX = -9999, lastMouseY = -9999;
+
+  // Live positie bijhouden i.p.v. enter/leave-events, zodat dit betrouwbaar blijft
+  // ook als het canvas net opnieuw getekend is.
+  document.addEventListener('mousemove', (e) => {
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
+  });
+  function isMouseOverGrid() {
+    const rect = canvasScroll.getBoundingClientRect();
+    return lastMouseX >= rect.left && lastMouseX <= rect.right && lastMouseY >= rect.top && lastMouseY <= rect.bottom;
+  }
+
+  canvas.addEventListener('mouseenter', () => { mouseOverCanvas = true; });
+  canvas.addEventListener('mouseleave', () => {
+    mouseOverCanvas = false;
+    if (!isPanning) canvas.style.cursor = 'crosshair';
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.code !== 'Space') return;
+    if (!isMouseOverGrid()) return;
+    const tag = (document.activeElement && document.activeElement.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    // Belangrijk: dit moet bij ELKE keydown-repeat (zolang de toets ingedrukt blijft) worden
+    // aangeroepen, anders scrollt de pagina alsnog verder na de allereerste keydown.
+    e.preventDefault();
+    if (!spacePanning) {
+      spacePanning = true;
+      canvas.style.cursor = 'grab';
+    }
+  }, { passive: false });
+  document.addEventListener('keyup', (e) => {
+    if (e.code !== 'Space') return;
+    spacePanning = false;
+    if (!isPanning) canvas.style.cursor = mouseOverCanvas ? 'crosshair' : '';
+  });
+
+  function startPan(e) {
+    if (!spacePanning || (e.button !== undefined && e.button !== 0)) return;
+    isPanning = true;
+    panStart = { x: e.clientX, y: e.clientY, scrollLeft: canvasScroll.scrollLeft, scrollTop: canvasScroll.scrollTop };
+    canvas.style.cursor = 'grabbing';
+    e.preventDefault();
+  }
+  function movePan(e) {
+    if (!isPanning || !panStart) return;
+    canvasScroll.scrollLeft = panStart.scrollLeft - (e.clientX - panStart.x);
+    canvasScroll.scrollTop = panStart.scrollTop - (e.clientY - panStart.y);
+  }
+  function endPan() {
+    if (!isPanning) return;
+    isPanning = false;
+    canvas.style.cursor = spacePanning ? 'grab' : (mouseOverCanvas ? 'crosshair' : '');
+  }
+  // Start alleen op het canvas (grid), maar volg de sleepbeweging via het hele document —
+  // zo blijft pannen werken ook als de muis tijdens het slepen even buiten het canvas komt.
+  canvas.addEventListener('pointerdown', startPan);
+  canvas.addEventListener('mousedown', startPan);
+  document.addEventListener('pointermove', movePan);
+  document.addEventListener('mousemove', movePan);
+  document.addEventListener('pointerup', endPan);
+  document.addEventListener('mouseup', endPan);
+  document.addEventListener('pointercancel', endPan);
+
+  // ---------- Pinch-to-zoom (alleen op het canvas, twee vingers uit elkaar slepen) ----------
+  let pinchStartDist = null;
+  let pinchStartCellSize = null;
+  let pinchCenter = null;
+  function touchDist(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.hypot(dx, dy);
+  }
+  canvas.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      pinchStartDist = touchDist(e.touches);
+      pinchStartCellSize = cellSize;
+      const rect = canvasScroll.getBoundingClientRect();
+      pinchCenter = {
+        x: (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left + canvasScroll.scrollLeft,
+        y: (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top + canvasScroll.scrollTop
+      };
+    }
+  }, { passive: false });
+  canvas.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 2 && pinchStartDist) {
+      e.preventDefault();
+      const scale = touchDist(e.touches) / pinchStartDist;
+      const zr = document.getElementById('zoomRange');
+      const min = parseInt(zr.min, 10), max = parseInt(zr.max, 10);
+      const newSize = Math.max(min, Math.min(max, Math.round(pinchStartCellSize * scale)));
+      if (newSize !== cellSize) {
+        const ratio = newSize / cellSize;
+        cellSize = newSize;
+        zr.value = cellSize;
+        scheduleZoomRender();
+        if (pinchCenter) {
+          canvasScroll.scrollLeft = pinchCenter.x * ratio - (pinchCenter.x - canvasScroll.scrollLeft);
+          canvasScroll.scrollTop = pinchCenter.y * ratio - (pinchCenter.y - canvasScroll.scrollTop);
+          pinchCenter.x *= ratio;
+          pinchCenter.y *= ratio;
+        }
+      }
+    }
+  }, { passive: false });
+  canvas.addEventListener('touchend', (e) => {
+    if (e.touches.length < 2) { pinchStartDist = null; pinchStartCellSize = null; pinchCenter = null; }
+  }, { passive: true });
+
+  // Trackpad-"pinch" (en Ctrl/Cmd + scrollwiel) — browsers sturen dit als een wheel-event met
+  // ctrlKey/metaKey. Alleen actief zolang de muisaanwijzer boven het pixelraster staat, omdat de
+  // listener rechtstreeks op het canvas hangt.
+  canvas.addEventListener('wheel', (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    const zr = document.getElementById('zoomRange');
+    const min = parseInt(zr.min, 10), max = parseInt(zr.max, 10);
+    const factor = Math.exp(-e.deltaY * 0.01);
+    const newSize = Math.max(min, Math.min(max, Math.round(cellSize * factor)));
+    if (newSize !== cellSize) {
+      cellSize = newSize;
+      zr.value = cellSize;
+      scheduleZoomRender();
+    }
+  }, { passive: false });
+
+  function updateToolbar() {
+    const addBtn = document.getElementById('addRepairBtn');
+    const clearBtn = document.getElementById('clearSelBtn');
+    const m = activeModule();
+    addBtn.textContent = `+ Reparatie (${selected.size} px)`;
+    addBtn.disabled = !m || selected.size === 0;
+    clearBtn.disabled = selected.size === 0;
+  }
+
+  // ---------- Legend ----------
+  function renderLegend() {
+    const m = activeModule();
+    const row = document.getElementById('legendRow');
+    if (!m || m.repairs.length === 0) {
+      row.innerHTML = '<span class="legend-empty">Nog geen reparaties gelogd.</span>';
+      return;
+    }
+    const seen = new Map();
+    m.repairs.forEach(r => { if (!seen.has(r.type)) seen.set(r.type, r.color); });
+    row.innerHTML = '';
+    seen.forEach((color, type) => {
+      const chip = document.createElement('div');
+      chip.className = 'legend-chip';
+      chip.innerHTML = `<span class="dot" style="background:${color}"></span>${escapeHtml(type)}`;
+      row.appendChild(chip);
+    });
+  }
+
+  // ---------- Stats ----------
+  function renderStats() {
+    const m = activeModule();
+    const row = document.getElementById('statsRow');
+    if (!m) { row.innerHTML = ''; return; }
+    const totalPx = m.repairs.reduce((s, r) => s + r.pixels.length, 0);
+    const open = m.repairs.filter(r => r.status === 'Open').reduce((s, r) => s + r.pixels.length, 0);
+    row.innerHTML = `
+      <div class="stat"><div class="num">${m.repairs.length}</div><div class="label">Meldingen</div></div>
+      <div class="stat"><div class="num" style="color:#c0142c">${open}</div><div class="label">Open px</div></div>
+      <div class="stat"><div class="num">${totalPx}</div><div class="label">Totaal px</div></div>
+    `;
+  }
+
+  // ---------- Repairs list (right) ----------
+  function renderRepairTable() {
+    const m = activeModule();
+    const tbody = document.getElementById('repairTbody');
+    tbody.innerHTML = '';
+    const empty = document.getElementById('repairEmpty');
+    if (!m || m.repairs.length === 0) {
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    m.repairs
+      .slice()
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+      .forEach(r => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><span class="swatch" style="background:${r.color}"></span></td>
+          <td>${escapeHtml(r.type)}<br><span class="badge ${r.status === 'Opgelost' ? 'resolved' : 'open'}">${r.status}</span></td>
+          <td>${r.date || ''}</td>
+          <td>${escapeHtml(r.initials || '')}</td>
+        `;
+        const actionTd = document.createElement('td');
+        actionTd.className = 'row-actions';
+        const editBtn = document.createElement('button');
+        editBtn.className = 'small';
+        editBtn.textContent = 'Bewerken';
+        editBtn.addEventListener('click', () => openRepairModal(r));
+        actionTd.appendChild(editBtn);
+        tr.appendChild(actionTd);
+        tr.addEventListener('mouseenter', () => highlightPixels(r, true));
+        tr.addEventListener('mouseleave', () => highlightPixels(r, false));
+        tbody.appendChild(tr);
+      });
+  }
+
+  function highlightPixels(rep, on) {
+    renderCanvas();
+    if (!on) return;
+    ctx.strokeStyle = document.body.classList.contains('dark') ? '#f2f2f4' : '#1c1c1e';
+    ctx.lineWidth = 2;
+    rep.pixels.forEach(([x, y]) => {
+      ctx.strokeRect(x * cellSize + 1, y * cellSize + 1, cellSize - 2, cellSize - 2);
+    });
+  }
+
+  // ---------- Add/edit repair modal ----------
+  const repairModalOverlay = document.getElementById('repairModalOverlay');
+  const colorRow = document.getElementById('colorRow');
+  PALETTE.forEach(color => {
+    const dot = document.createElement('div');
+    dot.className = 'color-dot';
+    dot.style.background = color;
+    dot.addEventListener('click', () => {
+      document.getElementById('r_color').value = color;
+      markActiveColor(color);
+    });
+    colorRow.appendChild(dot);
+  });
+  function markActiveColor(color) {
+    const c = document.createElement('canvas').getContext('2d');
+    c.fillStyle = color;
+    const norm = c.fillStyle;
+    colorRow.querySelectorAll('.color-dot').forEach(d => {
+      const dc = document.createElement('canvas').getContext('2d');
+      dc.fillStyle = d.style.background;
+      d.classList.toggle('active', dc.fillStyle === norm);
+    });
+  }
+
+  function openRepairModal(rep) {
+    const m = activeModule();
+    if (!m) return;
+    editingRepairId = rep ? rep.id : null;
+    document.getElementById('repairModalTitle').textContent = rep ? 'Reparatie bewerken' : 'Reparatie toevoegen';
+    document.getElementById('repairModalDelete').style.display = rep ? 'inline-block' : 'none';
+
+    const pxCount = rep ? rep.pixels.length : selected.size;
+    document.getElementById('pixelsLabel').textContent = `${pxCount} pixel(s) geselecteerd`;
+
+    document.getElementById('r_type').value = rep ? rep.type : 'Pixel';
+    document.getElementById('r_date').value = rep ? rep.date : todayISO();
+    document.getElementById('r_initials').value = rep ? rep.initials : lastInitials;
+    document.getElementById('r_status').value = rep ? rep.status : 'Open';
+    document.getElementById('r_note').value = rep ? (rep.note || '') : '';
+    const color = rep ? rep.color : PALETTE[m.repairs.length % PALETTE.length];
+    document.getElementById('r_color').value = color;
+    markActiveColor(color);
+
+    if (rep) {
+      selected = new Set(rep.pixels.map(([x, y]) => pxKey(x, y)));
+      renderCanvas();
+    }
+    repairModalOverlay.classList.add('show');
+  }
+
+  document.getElementById('addRepairBtn').addEventListener('click', () => {
+    if (selected.size === 0) return;
+    openRepairModal(null);
+  });
+  document.getElementById('repairModalCancel').addEventListener('click', () => {
+    repairModalOverlay.classList.remove('show');
+  });
+  document.getElementById('repairModalSave').addEventListener('click', () => {
+    const m = activeModule();
+    if (!m) return;
+    const pixels = Array.from(selected).map(k => k.split(',').map(Number));
+    if (pixels.length === 0) { alert('Selecteer minstens één pixel op het canvas.'); return; }
+
+    const data = {
+      type: document.getElementById('r_type').value,
+      date: document.getElementById('r_date').value || todayISO(),
+      initials: document.getElementById('r_initials').value.trim(),
+      status: document.getElementById('r_status').value,
+      color: document.getElementById('r_color').value,
+      note: document.getElementById('r_note').value.trim(),
+      pixels
+    };
+
+    if (data.initials) lastInitials = data.initials;
+
+    pushHistory();
+    if (editingRepairId) {
+      const rep = m.repairs.find(r => r.id === editingRepairId);
+      Object.assign(rep, data);
+    } else {
+      m.repairs.push({ id: uid(), ...data });
+    }
+    touchModule(m);
+    editingRepairId = null;
+    selected.clear();
+    save();
+    repairModalOverlay.classList.remove('show');
+    renderAll();
+  });
+  // ---------- Sneltoetsen: Ctrl/Cmd+A = Pixel (roze, opgelost), Ctrl/Cmd+B = Pad (blauw, opgelost) ----------
+  function quickAddRepair(type, color) {
+    const m = activeModule();
+    if (!m || selected.size === 0) return;
+    const pixels = Array.from(selected).map(k => k.split(',').map(Number));
+    pushHistory();
+    m.repairs.push({
+      id: uid(), type, date: todayISO(), initials: lastInitials, status: 'Opgelost',
+      color, note: '', pixels
+    });
+    touchModule(m);
+    selected.clear();
+    save();
+    renderAll();
+  }
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const key = e.key.toLowerCase();
+    if (key !== 'a' && key !== 'b') return;
+    const tag = (document.activeElement && document.activeElement.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (repairModalOverlay.classList.contains('show')) return;
+    const m = activeModule();
+    if (!m || selected.size === 0) return;
+    e.preventDefault();
+    if (key === 'a') quickAddRepair('Pixel', '#e6007e');
+    else quickAddRepair('Pad', '#2563eb');
+  });
+
+  // ---------- Esc = selectie van pixels opheffen (of open modal sluiten) ----------
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (repairModalOverlay.classList.contains('show')) {
+      repairModalOverlay.classList.remove('show');
+      editingRepairId = null;
+      return;
+    }
+    if (selected.size > 0) {
+      selected.clear();
+      renderCanvas();
+      updateToolbar();
+    }
+  });
+
+  document.getElementById('repairModalDelete').addEventListener('click', () => {
+    if (!editingRepairId) return;
+    if (!confirm('Deze reparatie verwijderen?')) return;
+    const m = activeModule();
+    pushHistory();
+    m.repairs = m.repairs.filter(r => r.id !== editingRepairId);
+    touchModule(m);
+    editingRepairId = null;
+    selected.clear();
+    save();
+    repairModalOverlay.classList.remove('show');
+    renderAll();
+  });
+
+  // ---------- Bestand-menu (helemaal boven in) ----------
+  const fileMenuBtn = document.getElementById('fileMenuBtn');
+  const fileMenuDropdown = document.getElementById('fileMenuDropdown');
+  fileMenuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    fileMenuDropdown.classList.toggle('show');
+    fileMenuBtn.classList.toggle('open');
+  });
+  document.addEventListener('click', () => {
+    fileMenuDropdown.classList.remove('show');
+    fileMenuBtn.classList.remove('open');
+  });
+  fileMenuDropdown.addEventListener('click', (e) => e.stopPropagation());
+
+  document.getElementById('menuSaveJson').addEventListener('click', () => {
+    const json = JSON.stringify(state, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `pixeltracker-database_${todayISO()}.json`;
+    a.click();
+    fileMenuDropdown.classList.remove('show');
+  });
+
+  const jsonFileInput = document.getElementById('jsonFileInput');
+  document.getElementById('menuLoadJson').addEventListener('click', () => {
+    jsonFileInput.click();
+    fileMenuDropdown.classList.remove('show');
+  });
+  jsonFileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        if (!parsed || typeof parsed.modules !== 'object') throw new Error('ongeldig bestand');
+        if (!confirm('Huidige database vervangen door de inhoud van dit bestand?')) return;
+        pushHistory();
+        state = parsed;
+        const ids = Object.keys(state.modules);
+        if (!state.activeId || !state.modules[state.activeId]) {
+          state.activeId = ids.length ? ids[0] : null;
+        }
+        selected.clear();
+        save();
+        renderAll();
+      } catch (err) {
+        alert('Kon het bestand niet lezen. Is het een geldig database-JSON-bestand?');
+      }
+    };
+    reader.readAsText(file);
+    jsonFileInput.value = '';
+  });
+
+  document.getElementById('menuNewDb').addEventListener('click', () => {
+    if (!confirm('Alle modules en reparaties verwijderen en met een lege database starten? Sla eerst op via "Database opslaan" als je dit wilt bewaren.')) return;
+    pushHistory();
+    state = { activeId: null, modules: {} };
+    selected.clear();
+    save();
+    renderAll();
+    fileMenuDropdown.classList.remove('show');
+  });
+
+  // ---------- CSV export ----------
+  document.getElementById('menuExportCsv').addEventListener('click', () => {
+    const m = activeModule();
+    if (!m) { alert('Selecteer eerst een module.'); return; }
+    const rows = [['Wat', 'Wanneer', 'Wie', 'Status', 'Kleur', 'Pixels', 'Notitie']];
+    m.repairs.forEach(r => {
+      rows.push([
+        r.type, r.date, r.initials, r.status, r.color,
+        r.pixels.map(([x, y]) => `(${x},${y})`).join(' '),
+        (r.note || '').replace(/\n/g, ' ')
+      ]);
+    });
+    const csv = rows.map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `reparaties_${m.name}.csv`.replace(/\s+/g, '_');
+    a.click();
+    fileMenuDropdown.classList.remove('show');
+  });
+
+  document.getElementById('menuPrint').addEventListener('click', () => {
+    fileMenuDropdown.classList.remove('show');
+    window.print();
+  });
+
+  // ---------- A3-export (grid links, reparaties rechts) ----------
+  function buildPrintGridDataURL(m, dark) {
+    const cell = 14;
+    const ruler = 34;
+    const w = m.width * cell + ruler;
+    const h = m.height * cell + ruler;
+    const off = document.createElement('canvas');
+    off.width = w;
+    off.height = h;
+    const c = off.getContext('2d');
+
+    const pageBg = dark ? '#17171a' : '#ffffff';
+    const emptyColor = dark ? '#303035' : '#f2f2f4';
+    const gridColor = dark ? '#3c3c42' : '#cfcfd4';
+    const borderColor = dark ? '#5a5a62' : '#888888';
+    const textColor = dark ? '#a3a3ab' : '#555555';
+
+    c.fillStyle = pageBg;
+    c.fillRect(0, 0, w, h);
+
+    const colorMap = new Map();
+    const resolvedSet = new Set();
+    m.repairs.forEach(rep => {
+      rep.pixels.forEach(([x, y]) => {
+        colorMap.set(pxKey(x, y), rep.color);
+        if (rep.status === 'Opgelost') resolvedSet.add(pxKey(x, y));
+      });
+    });
+
+    for (let y = 0; y < m.height; y++) {
+      for (let x = 0; x < m.width; x++) {
+        const key = pxKey(x, y);
+        const color = colorMap.get(key);
+        c.fillStyle = color || emptyColor;
+        c.globalAlpha = (color && resolvedSet.has(key)) ? 0.55 : 1;
+        c.fillRect(ruler + x * cell, ruler + y * cell, cell - 0.5, cell - 0.5);
+        c.globalAlpha = 1;
+      }
+    }
+
+    c.strokeStyle = gridColor;
+    c.lineWidth = 1;
+    for (let x = 0; x <= m.width; x += 10) {
+      c.beginPath();
+      c.moveTo(ruler + x * cell, ruler);
+      c.lineTo(ruler + x * cell, ruler + m.height * cell);
+      c.stroke();
+    }
+    for (let y = 0; y <= m.height; y += 10) {
+      c.beginPath();
+      c.moveTo(ruler, ruler + y * cell);
+      c.lineTo(ruler + m.width * cell, ruler + y * cell);
+      c.stroke();
+    }
+    c.strokeStyle = borderColor;
+    c.strokeRect(ruler, ruler, m.width * cell, m.height * cell);
+
+    c.fillStyle = textColor;
+    c.font = '13px -apple-system, sans-serif';
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    for (let x = 0; x < m.width; x += 10) c.fillText(String(x + 1), ruler + x * cell + cell / 2, ruler / 2);
+    c.textAlign = 'right';
+    for (let y = 0; y < m.height; y += 10) c.fillText(String(y + 1), ruler - 6, ruler + y * cell + cell / 2);
+
+    return off.toDataURL('image/png');
+  }
+
+  function buildPrintPage(m, dark) {
+    const page = document.createElement('div');
+    page.className = 'print-page';
+
+    const left = document.createElement('div');
+    left.className = 'print-left';
+    const img = document.createElement('img');
+    img.src = buildPrintGridDataURL(m, dark);
+    left.appendChild(img);
+
+    const totalPx = m.repairs.reduce((s, r) => s + r.pixels.length, 0);
+    const openPx = m.repairs.filter(r => r.status === 'Open').reduce((s, r) => s + r.pixels.length, 0);
+    const rows = m.repairs
+      .slice()
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+      .map(r => `
+        <tr>
+          <td><span class="print-swatch" style="background:${r.color}"></span></td>
+          <td>${escapeHtml(r.type)}</td>
+          <td>${r.date || ''}</td>
+          <td>${escapeHtml(r.initials || '')}</td>
+          <td>${r.status}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="5" style="color:#999;">Nog geen reparaties</td></tr>';
+
+    const right = document.createElement('div');
+    right.className = 'print-right';
+    right.innerHTML = `
+      <div>
+        <h1>${escapeHtml(m.name)}</h1>
+        <div class="print-meta">${m.company ? escapeHtml(m.company) + ' · ' : ''}${m.width} × ${m.height} px${m.sn ? ' · ' + escapeHtml(m.sn) : ''} · ${totalPx} reparatie-pixels (${openPx} open) · geëxporteerd ${todayISO()}</div>
+      </div>
+      <table>
+        <thead><tr><th></th><th>Wat</th><th>Wanneer</th><th>Wie</th><th>Status</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+
+    page.appendChild(left);
+    page.appendChild(right);
+    return { page, img };
+  }
+
+  function exportPrintA3(mode) {
+    const root = document.getElementById('printExportRoot');
+    root.innerHTML = '';
+    const modules = mode === 'selected'
+      ? (activeModule() ? [activeModule()] : [])
+      : Object.values(state.modules).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+    if (modules.length === 0) { alert('Geen module om te exporteren.'); return; }
+
+    // Exportlayout volgt het huidige thema (licht/donker) van de app
+    const dark = document.body.classList.contains('dark');
+    if (dark) {
+      root.style.setProperty('--print-bg', '#17171a');
+      root.style.setProperty('--print-text', '#eaeaec');
+      root.style.setProperty('--print-muted', '#a3a3ab');
+      root.style.setProperty('--print-border', '#3c3c42');
+      root.style.setProperty('--print-table-border', '#333338');
+    } else {
+      root.style.setProperty('--print-bg', '#ffffff');
+      root.style.setProperty('--print-text', '#111111');
+      root.style.setProperty('--print-muted', '#555555');
+      root.style.setProperty('--print-border', '#cccccc');
+      root.style.setProperty('--print-table-border', '#dddddd');
+    }
+
+    const imgs = [];
+    modules.forEach(m => {
+      const { page, img } = buildPrintPage(m, dark);
+      root.appendChild(page);
+      imgs.push(img);
+    });
+
+    document.body.classList.add('print-export-mode');
+
+    // Wacht tot alle gridafbeeldingen echt geladen/gedecodeerd zijn, anders is het
+    // canvas-beeld nog leeg op het moment dat het printdialoog opent.
+    const ready = imgs.map(img => (img.decode ? img.decode().catch(() => {}) : new Promise(res => {
+      if (img.complete) res(); else { img.onload = res; img.onerror = res; }
+    })));
+    Promise.all(ready).then(() => {
+      requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
+    });
+  }
+  window.addEventListener('afterprint', () => {
+    document.body.classList.remove('print-export-mode');
+    document.getElementById('printExportRoot').innerHTML = '';
+  });
+
+  document.getElementById('menuExportSelectedA3').addEventListener('click', () => {
+    fileMenuDropdown.classList.remove('show');
+    exportPrintA3('selected');
+  });
+  document.getElementById('menuExportDatabaseA3').addEventListener('click', () => {
+    fileMenuDropdown.classList.remove('show');
+    exportPrintA3('database');
+  });
+
+  // ---------- Render all ----------
+  function renderAll() {
+    renderModuleList();
+    renderAllModulesTable();
+    renderCanvas();
+    renderLegend();
+    renderStats();
+    renderRepairTable();
+    updateToolbar();
+  }
+
+  renderAll();
+})();
+</script>
+</body>
+</html>
