@@ -23,6 +23,12 @@ except Exception:
 APP_TITLE = "PixelTracker Desktop"
 STORAGE_FILE = Path.home() / ".pixeltracker_db.json"
 THEME_FILE = Path.home() / ".pixeltracker_theme.json"
+UPDATE_LOG = [
+    ("2026-07-19", "Projectrepo aangemaakt op Desktop met broncode in src/ en assets/"),
+    ("2026-07-19", "Python omgeving en dependencies toegevoegd (PyQt6 + WebEngine)"),
+    ("2026-07-19", "Extra module-menu toegevoegd met optie: verwijderen uit database"),
+    ("2026-07-19", "Updates menu toegevoegd zodat alle wijzigingen in de app zichtbaar zijn"),
+]
 PALETTE = [
     "#e6007e",
     "#2563eb",
@@ -210,8 +216,53 @@ class PixelTrackerApp(tk.Tk):
         file_menu.add_command(label="Nieuwe lege database", command=self.new_empty_db)
         file_menu.add_command(label="Afsluiten", command=self.on_close)
 
+        updates_menu = tk.Menu(menubar, tearoff=False)
+        updates_menu.add_command(label="Toon alle updates", command=self.show_updates_window)
+
         menubar.add_cascade(label="Bestand", menu=file_menu)
+        menubar.add_cascade(label="Updates", menu=updates_menu)
         self.config(menu=menubar)
+
+    def show_updates_window(self) -> None:
+        win = tk.Toplevel(self)
+        win.title("PixelTracker updates")
+        win.geometry("760x460")
+        win.minsize(620, 360)
+
+        frame = ttk.Frame(win, style="App.TFrame")
+        frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(1, weight=1)
+
+        ttk.Label(frame, text="Wijzigingen in deze app", style="Title.TLabel").grid(row=0, column=0, sticky="w")
+
+        text_wrap = ttk.Frame(frame, style="App.TFrame")
+        text_wrap.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
+        text_wrap.columnconfigure(0, weight=1)
+        text_wrap.rowconfigure(0, weight=1)
+
+        updates_text = tk.Text(
+            text_wrap,
+            wrap=tk.WORD,
+            relief=tk.SOLID,
+            borderwidth=1,
+            padx=10,
+            pady=10,
+            font=("Helvetica", 10),
+        )
+        updates_text.grid(row=0, column=0, sticky="nsew")
+
+        ybar = ttk.Scrollbar(text_wrap, orient=tk.VERTICAL, command=updates_text.yview)
+        ybar.grid(row=0, column=1, sticky="ns")
+        updates_text.configure(yscrollcommand=ybar.set)
+
+        lines = []
+        for d, msg in UPDATE_LOG:
+            lines.append(f"[{d}] {msg}")
+        lines.append("\nNieuwe updates worden hier telkens toegevoegd.")
+
+        updates_text.insert("1.0", "\n".join(lines))
+        updates_text.configure(state=tk.DISABLED)
 
     def build_left_column(self) -> None:
         add_card = ttk.LabelFrame(self.left, text="+ Module toevoegen", style="Card.TLabelframe")
@@ -252,6 +303,8 @@ class PixelTrackerApp(tk.Tk):
         self.module_listbox = tk.Listbox(list_card, activestyle="none")
         self.module_listbox.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
         self.module_listbox.bind("<<ListboxSelect>>", self.on_module_select)
+        self.module_listbox.bind("<Button-3>", self.on_module_list_context_menu)
+        self.module_listbox.bind("<Control-Button-1>", self.on_module_list_context_menu)
 
         actions = ttk.Frame(list_card)
         actions.pack(fill=tk.X, padx=8, pady=(0, 8))
@@ -356,6 +409,8 @@ class PixelTrackerApp(tk.Tk):
 
         self.mod_tree.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
         self.mod_tree.bind("<Double-1>", self.on_bottom_module_open)
+        self.mod_tree.bind("<Button-3>", self.on_module_tree_context_menu)
+        self.mod_tree.bind("<Control-Button-1>", self.on_module_tree_context_menu)
 
     def build_right_column(self) -> None:
         card = ttk.LabelFrame(self.right, text="Reparaties", style="Card.TLabelframe")
@@ -394,6 +449,10 @@ class PixelTrackerApp(tk.Tk):
         self.in_sn.bind("<Return>", lambda _: self.add_module_from_form())
         self.in_name.bind("<Return>", lambda _: self.in_sn.focus_set())
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    def build_module_context_menu(self) -> None:
+        self.module_ctx = tk.Menu(self, tearoff=False)
+        self.module_ctx.add_command(label="Module verwijderen uit database", command=self.delete_active_module)
 
     # ---------- Persistence ----------
 
@@ -656,6 +715,8 @@ class PixelTrackerApp(tk.Tk):
     # ---------- Rendering ----------
 
     def render_all(self) -> None:
+        if not hasattr(self, "module_ctx"):
+            self.build_module_context_menu()
         self.render_module_list()
         self.render_all_modules_table()
         self.render_module_header()
@@ -724,6 +785,34 @@ class PixelTrackerApp(tk.Tk):
         self.selected_pixels.clear()
         self.save_state()
         self.render_all()
+
+    def on_module_list_context_menu(self, event: tk.Event) -> None:
+        if self.module_listbox.size() <= 0:
+            return
+        idx = self.module_listbox.nearest(event.y)
+        if idx < 0 or idx >= len(self._module_id_by_list_index):
+            return
+        self.module_listbox.selection_clear(0, tk.END)
+        self.module_listbox.selection_set(idx)
+        self.state_data.activeId = self._module_id_by_list_index[idx]
+        self.selected_pixels.clear()
+        self.save_state()
+        self.render_all()
+        self.module_ctx.tk_popup(event.x_root, event.y_root)
+
+    def on_module_tree_context_menu(self, event: tk.Event) -> None:
+        row_id = self.mod_tree.identify_row(event.y)
+        if not row_id or not row_id.startswith("m-"):
+            return
+        self.mod_tree.selection_set(row_id)
+        module_id = row_id[2:]
+        if module_id not in self.state_data.modules:
+            return
+        self.state_data.activeId = module_id
+        self.selected_pixels.clear()
+        self.save_state()
+        self.render_all()
+        self.module_ctx.tk_popup(event.x_root, event.y_root)
 
     def render_module_header(self) -> None:
         m = self.active_module()
@@ -923,7 +1012,13 @@ class PixelTrackerApp(tk.Tk):
         m = self.active_module()
         if not m:
             return
-        if not messagebox.askyesno("Bevestigen", f"Module {m.name} verwijderen?"):
+        self.delete_module_by_id(m.id)
+
+    def delete_module_by_id(self, module_id: str) -> None:
+        m = self.state_data.modules.get(module_id)
+        if not m:
+            return
+        if not messagebox.askyesno("Bevestigen", f"Module {m.name} verwijderen uit database?"):
             return
         self.push_history()
         del self.state_data.modules[m.id]
