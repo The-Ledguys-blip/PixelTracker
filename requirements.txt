@@ -1,2 +1,5 @@
 PyQt6>=6.6
 PyQt6-WebEngine>=6.6
+Pillow>=11.0
+PyInstaller>=6.0
+reportlab>=4.0

@@ -1,11 +1,18 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(SPECPATH).parent
 
 a = Analysis(
-    ['../src/pixel_repair_desktop.py'],
+    [str(PROJECT_ROOT / 'src' / 'pixel_repair_desktop.py')],
     pathex=[],
     binaries=[],
-    datas=[('../assets/pixel_repair_app.html', '.'), ('../assets/app_icon.png', '.')],
+    datas=[
+        (str(PROJECT_ROOT / 'assets' / 'pixel_repair_app.html'), '.'),
+        (str(PROJECT_ROOT / 'assets' / 'app_icon.png'), '.'),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -25,35 +32,23 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['../assets/app_icon.icns'],
+    icon=[str(PROJECT_ROOT / 'assets' / 'app_icon.ico')],
+    version=str(Path(SPECPATH) / 'version_info_windows.txt'),
 )
+
 coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
-    name='PixelTracker',
-)
-app = BUNDLE(
-    coll,
-    name='PixelTracker.app',
-    icon='../assets/app_icon.icns',
-    bundle_identifier='com.pixeltracker.app',
-    version='2.1.32',
-    info_plist={
-        'CFBundleDisplayName': 'PixelTracker',
-        'CFBundleShortVersionString': '2.1.32',
-        'CFBundleVersion': '2.1.32',
-        'LSMinimumSystemVersion': '12.0',
-        'NSHighResolutionCapable': True,
-    },
+    name='PixelTracker-Windows',
 )

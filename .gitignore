@@ -4,6 +4,7 @@ __pycache__/
 *.pyo
 *.pyd
 .venv/
+.venv-win/
 venv/
 
 # macOS
@@ -11,6 +12,9 @@ venv/
 
 # Build artifacts
 dist/
+build/PixelTracker/
+build/PixelTracker-Harvest.wxs
+build/msi-obj/
 
 # App bundle copy
 PixelTracker.app/

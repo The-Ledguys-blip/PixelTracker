@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product
+    Id="*"
+    Name="PixelTracker"
+    Language="1043"
+    Version="2.1.32"
+    Manufacturer="PixelTracker"
+    UpgradeCode="4DF480CF-428E-4FC6-B03D-0C71D27AC9C7">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perUser" Platform="x64" />
+    <MajorUpgrade DowngradeErrorMessage="Er is al een nieuwere versie van PixelTracker geïnstalleerd." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="PixelTrackerIcon" SourceFile="assets\app_icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="PixelTrackerIcon" />
+
+    <Feature Id="ProductFeature" Title="PixelTracker" Level="1">
+      <ComponentGroupRef Id="HarvestedFiles" />
+      <ComponentRef Id="ApplicationShortcut" />
+    </Feature>
+  </Product>
+
+  <Fragment>
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="LocalAppDataFolder">
+        <Directory Id="ProgramsDirectory" Name="Programs">
+          <Directory Id="INSTALLFOLDER" Name="PixelTracker" />
+        </Directory>
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ApplicationProgramsFolder" Name="PixelTracker" />
+      </Directory>
+    </Directory>
+  </Fragment>
+
+  <Fragment>
+    <DirectoryRef Id="ApplicationProgramsFolder">
+      <Component Id="ApplicationShortcut" Guid="E94896EB-E67B-4FB6-AE14-C28838541AF6" Win64="yes">
+        <Shortcut
+          Id="ApplicationStartMenuShortcut"
+          Name="PixelTracker"
+          Description="PixelTracker"
+          Target="[INSTALLFOLDER]PixelTracker.exe"
+          WorkingDirectory="INSTALLFOLDER" />
+        <RemoveFolder Id="RemoveApplicationProgramsFolder" Directory="ApplicationProgramsFolder" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\PixelTracker" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+</Wix>

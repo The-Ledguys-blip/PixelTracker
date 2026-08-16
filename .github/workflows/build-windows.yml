@@ -1,0 +1,46 @@
+name: Build Windows 11 Beta
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: "x64"
+          cache: pip
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup --no-progress -y
+
+      - name: Install WiX Toolset
+        shell: powershell
+        run: choco install wixtoolset --no-progress -y
+
+      - name: Build installer
+        shell: powershell
+        run: .\build_windows.ps1
+
+      - name: Build MSI
+        shell: powershell
+        run: .\build_msi.ps1 -SkipAppBuild
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: PixelTracker-V2.1.32-Beta-Windows11
+          path: |
+            dist/PixelTracker_V2.1.32_Beta_Windows11_Setup.exe
+            dist/PixelTracker_V2.1.32_Beta_Windows11.msi
+          if-no-files-found: error

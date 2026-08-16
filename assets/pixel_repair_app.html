@@ -3,9 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <title>PixelTracker</title>
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
 <style>
   :root {
-    color-scheme: light;
+    color-scheme: dark;
     --accent: #e6007e;
     --bg: #f7f7f8;
     --panel-bg: #ffffff;
@@ -21,6 +22,8 @@
     --cell-empty: #f2f2f4;
     --grid-line: #dcdce0;
     --active-bg: #fdf0f7;
+    --popup-radius: 12px;
+    --popup-shadow: 0 14px 34px rgba(0,0,0,.24);
   }
   body.dark {
     color-scheme: dark;
@@ -62,16 +65,58 @@
   .menu-dropdown {
     display: none; flex-direction: column; gap: 2px;
     position: absolute; top: 100%; left: 0; margin-top: 4px;
-    background: var(--panel-bg); border: 1px solid var(--border); border-radius: 8px;
-    box-shadow: 0 10px 28px rgba(0,0,0,.18); padding: 6px; min-width: 240px; z-index: 31;
+    background: var(--panel-bg); border: 1px solid var(--border); border-radius: var(--popup-radius);
+    box-shadow: var(--popup-shadow); padding: 6px; min-width: 240px; z-index: 31;
+    transform: translateY(-4px) scale(.99);
+    opacity: 0;
+    transition: transform .12s ease, opacity .12s ease;
   }
-  .menu-dropdown.show { display: flex; }
+  .menu-dropdown.show { display: flex; transform: translateY(0) scale(1); opacity: 1; }
   .menu-dropdown button {
     text-align: left; border: none; background: transparent; padding: 8px 10px;
     border-radius: 6px; font-size: 12.5px;
   }
   .menu-dropdown button:hover { background: var(--hover-bg); }
   .menu-dropdown hr { border: none; border-top: 1px solid var(--border-soft); margin: 4px 2px; width: 100%; }
+  .submenu-wrap { position: relative; width: 100%; }
+  .submenu-trigger {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .menu-subdropdown {
+    display: none;
+    position: absolute;
+    top: 0;
+    left: calc(100% + 6px);
+    min-width: 280px;
+    max-width: 360px;
+    max-height: 360px;
+    overflow: auto;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--popup-radius);
+    box-shadow: var(--popup-shadow);
+    padding: 6px;
+    z-index: 40;
+  }
+  .submenu-wrap.show .menu-subdropdown { display: block; }
+  .recent-file-item {
+    width: 100%;
+    text-align: left;
+    border: none;
+    background: transparent;
+    padding: 8px 10px;
+    border-radius: 7px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .recent-file-item:hover { background: var(--hover-bg); }
+  .recent-file-item-name { font-size: 12px; font-weight: 600; }
+  .recent-file-item-meta { font-size: 10.5px; color: var(--text-muted); }
 
   header.app-header {
     padding: 12px 18px;
@@ -84,6 +129,25 @@
     gap: 10px;
   }
   header.app-header h1 { font-size: 16px; margin: 0; font-weight: 700; }
+  .header-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+  .build-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .03em;
+    border: 1px solid var(--border-soft);
+    background: var(--chip-bg);
+    color: var(--text-muted);
+    border-radius: 999px;
+    padding: 3px 8px;
+    white-space: nowrap;
+  }
 
   select, input, textarea, button {
     font-family: inherit;
@@ -109,7 +173,6 @@
   button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
   button.primary:hover { background: #c40068; }
   button.danger { color: #e5486b; border-color: #6b2530; }
-  body:not(.dark) button.danger { color: #c0142c; border-color: #f0b3bd; }
   button.danger:hover { background: #fdecef; }
   body.dark button.danger:hover { background: #3a1c22; }
   button:disabled { opacity: .45; cursor: not-allowed; }
@@ -242,18 +305,139 @@
   .db-section { margin: 0 18px 40px; }
 
   .modal-overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,.45);
+    position: fixed; inset: 0; background: rgba(10,10,14,.48);
+    backdrop-filter: blur(8px);
     display: none; align-items: center; justify-content: center; z-index: 50;
+    padding: 18px;
   }
   .modal-overlay.show { display: flex; }
   .modal {
-    background: var(--panel-bg); border-radius: 12px; padding: 18px 20px; width: 360px; max-width: 92vw;
-    box-shadow: 0 10px 40px rgba(0,0,0,.35); max-height: 90vh; overflow-y: auto;
+    background: var(--panel-bg); border-radius: 14px; padding: 18px 20px; width: 360px; max-width: 92vw;
+    box-shadow: var(--popup-shadow); max-height: 90vh; overflow-y: auto;
     border: 1px solid var(--border);
   }
-  .modal h3 { margin: 0 0 12px; font-size: 14px; }
+  .preset-modal { width: 760px; max-width: 94vw; }
+  .modal h3 { margin: 0 0 6px; font-size: 14px; }
+  .modal-subtitle { font-size: 11px; color: var(--text-muted); margin: 0 0 12px; }
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .startup-modal { width: 430px; padding: 22px; }
+  .startup-kicker {
+    color: var(--accent);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    margin-bottom: 7px;
+  }
+  .startup-modal h3 { font-size: 18px; margin-bottom: 7px; }
+  .startup-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+  .startup-actions button { min-height: 42px; }
+  .startup-status { min-height: 16px; margin-top: 10px; text-align: center; }
   .hint { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+  .save-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .save-status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    display: inline-block;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.12) inset;
+    flex: none;
+  }
+  .save-status-dot.saved { background: #16a34a; }
+  .save-status-dot.unsaved { background: #dc2626; }
+  .icon-btn {
+    width: 26px;
+    height: 22px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1;
+  }
+  .modal .field input[type="text"],
+  .modal .field input[type="date"],
+  .modal .field select,
+  .modal .field textarea {
+    border-radius: 8px;
+    padding: 7px 9px;
+  }
+  .context-menu {
+    position: fixed;
+    display: none;
+    min-width: 190px;
+    z-index: 80;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--popup-radius);
+    box-shadow: var(--popup-shadow);
+    padding: 6px;
+    transform: translateY(-3px) scale(.99);
+    opacity: 0;
+    transition: transform .12s ease, opacity .12s ease;
+  }
+  .context-menu.show { display: block; transform: translateY(0) scale(1); opacity: 1; }
+  .context-menu button {
+    width: 100%;
+    text-align: left;
+    border: none;
+    background: transparent;
+    padding: 8px 10px;
+    border-radius: 7px;
+  }
+  .context-menu button:hover { background: var(--hover-bg); }
+  .context-menu button.danger {
+    border: none;
+    color: #c0142c;
+  }
+  .preset-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .preset-card {
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+    background: var(--chip-bg);
+    padding: 10px;
+  }
+  .preset-card h4 {
+    margin: 0 0 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  .preset-input-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .preset-input-row input { flex: 1; }
+  .preset-input-row select { flex: 1; }
+  .preset-card-wide { grid-column: 1 / -1; }
+  .preset-meta { color: var(--text-muted); font-size: 10.5px; }
+  .preset-list { display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto; }
+  .preset-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--panel-bg);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    padding: 6px 8px;
+  }
+  .preset-row-name { flex: 1; font-size: 12px; }
+  .preset-row-actions { display: flex; gap: 6px; }
+  .preset-empty {
+    border: 1px dashed var(--border-soft);
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+    color: var(--text-faint);
+    font-size: 11.5px;
+  }
+  @media (max-width: 900px) {
+    .preset-grid { grid-template-columns: 1fr; }
+  }
   .color-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
   .color-dot { width: 20px; height: 20px; border-radius: 5px; cursor: pointer; border: 2px solid transparent; }
   .color-dot.active { border-color: var(--text); }
@@ -262,78 +446,503 @@
   .theme-toggle {
     display: flex; align-items: center; gap: 6px;
   }
+  .session-restore-notice {
+    position: fixed;
+    top: 14px;
+    right: 14px;
+    z-index: 120;
+    background: var(--panel-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: 8px;
+    box-shadow: 0 10px 26px rgba(0,0,0,.18);
+    padding: 8px 11px;
+    font-size: 11.5px;
+    opacity: 0;
+    transform: translateY(-6px);
+    pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease;
+  }
+  .session-restore-notice.show {
+    opacity: 1;
+    transform: translateY(0);
+  }
 
   footer.app-footer { text-align: center; color: var(--text-faint); font-size: 10.5px; padding: 6px 0 20px; }
 
   @media print {
-    .menubar, header.app-header, .toolbar, .row-actions, .modal-overlay, button, #addModuleForm { display: none !important; }
-    main { grid-template-columns: 1fr 1fr; }
+    body:not(.export-report-mode) > * { display: none !important; }
+    body.export-report-mode > *:not(#printExportRoot) { display: none !important; }
+    body.export-report-mode #printExportRoot { display: block !important; }
     body { background: #fff; color: #000; }
   }
 
-  /* ---------- A3-exportlayout (grid + reparatielijst), volgt het huidige thema ---------- */
-  #printExportRoot {
-    display: none;
-    --print-bg: #ffffff;
-    --print-text: #111111;
-    --print-muted: #555555;
-    --print-border: #cccccc;
-    --print-table-border: #dddddd;
+  /* ---------- A3-exportlayout (modern report style) ---------- */
+  #printExportRoot { display: none; }
+  .export-report-stack {
+    width: 100%;
+    display: block;
   }
-  @page export-a3 { size: A3 landscape; margin: 12mm; }
-  .print-page {
-    page: export-a3;
-    width: 396mm;
-    height: 273mm;
-    display: flex;
-    gap: 10mm;
-    background: var(--print-bg);
-    color: var(--print-text);
+  .export-module-batch {
+    width: 100%;
+    display: block;
+  }
+  .export-report-page {
+    width: 420mm;
+    height: 297mm;
     box-sizing: border-box;
+    padding: 10mm;
+    background: #15151a;
     page-break-after: always;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    break-after: page;
+    margin: 0 auto 14px;
   }
-  .print-page:last-child { page-break-after: auto; }
-  .print-left {
-    flex: 0 0 68%;
+  .export-report-page:last-child { page-break-after: auto; }
+  .export-report-shell {
+    width: 100%;
+    height: 100%;
+    border: 1px solid #333338;
+    border-radius: 12px;
+    background: #1f1f23;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    overflow: hidden;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+  }
+  .export-report-head {
+    padding: 12px 18px 10px;
+    background: #1b1d22;
+    border-bottom: 1px solid #2d3037;
+  }
+  .export-report-title-row {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+  }
+  .export-report-header-left,
+  .export-report-header-right {
+    min-height: 20px;
+    display: flex;
+    align-items: center;
+    color: #a7aeb9;
+    font-size: 10px;
+    letter-spacing: 0.02em;
+  }
+  .export-report-header-left {
+    justify-content: flex-start;
+  }
+  .export-report-header-right {
+    justify-content: flex-end;
+  }
+  .export-report-brand {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    color: #edf1f5;
+    white-space: nowrap;
+    text-align: center;
+  }
+  .export-brand-mark {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #f05d7a;
+    box-shadow: 0 0 0 2px rgba(240, 93, 122, 0.18);
+    transform: translateY(-1px);
+  }
+  .export-report-subtitle {
+    margin-top: 4px;
+    font-size: 11px;
+    color: #a4acba;
+    letter-spacing: 0.01em;
+    text-align: right;
+  }
+  .export-report-main {
+    display: grid;
+    grid-template-columns: 1.32fr 0.88fr;
+    gap: 18px;
+    padding: 16px 18px 10px;
+    min-height: 0;
+    flex: 1;
+    align-items: stretch;
+  }
+  .export-right-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 0;
+  }
+  .export-preview-panel {
+    border: 1px solid #30343d;
+    border-radius: 10px;
+    background: #1e2129;
+    padding: 12px 14px 12px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+    overflow: hidden;
+  }
+  .export-panel-header {
+    margin-bottom: 10px;
+  }
+  .export-panel-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    color: #dfe4eb;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    line-height: 1.3;
+  }
+  .export-panel-subtitle {
+    margin-top: 5px;
+    color: #a0a9b6;
+    font-size: 10px;
+    line-height: 1.3;
+  }
+  .export-panel-surface {
+    border: 1px solid #2d3139;
+    border-radius: 8px;
+    background: #151a20;
+    min-height: 220px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid var(--print-border);
-    padding: 2mm;
+    overflow: hidden;
+    flex: 1;
+  }
+  .export-panel-surface canvas {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+    background: #151a20;
+  }
+  .export-repairs-section {
+    background: #1d2128;
+    border: 1px solid #2d3139;
+    border-radius: 10px;
+    padding: 0;
+    overflow: hidden;
+    margin: 0;
+  }
+  .export-repairs-head {
+    margin: 0;
+    padding: 10px 12px 8px;
+    color: #dfe4eb;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    border-bottom: 1px solid #2d3139;
+    line-height: 1.2;
+  }
+  .export-repairs-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px 8px;
+  }
+  .export-repair-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid #2d3139;
+    border-radius: 7px;
+    background: rgba(18, 20, 26, 0.65);
+    padding: 8px 10px;
+  }
+  .export-repair-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.05);
+  }
+  .export-repair-copy {
+    flex: 1;
     min-width: 0;
+  }
+  .export-repair-type {
+    display: block;
+    color: #edf1f5;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .export-report-meta-inline {
+    display: inline-block;
+    margin-top: 2px;
+    color: #a4acba;
+    font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .export-repair-count {
+    color: #dfe4eb;
+    font-size: 11px;
+    font-weight: 700;
+    min-width: 42px;
+    text-align: right;
+  }
+  .export-report-footer {
+    margin: 0 18px 18px;
+    background: rgba(211, 69, 123, 0.8);
+    border: 1px solid rgba(247, 155, 182, 0.4);
+    border-radius: 8px;
+    color: #fff2f8;
+    font-size: 11px;
+    line-height: 1.4;
+    padding: 10px 14px;
+  }
+  .export-report-footer strong {
+    font-weight: 800;
+  }
+  .export-preview-label {
+    font-size: 11px;
+    color: #a3a3ab;
+    margin-bottom: 8px;
+    line-height: 1.3;
+  }
+  .export-report-segmentmeta {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 0 18px 10px;
+  }
+  .export-meta-pill {
+    border: 1px solid #3b3b42;
+    border-radius: 999px;
+    padding: 3px 9px;
+    font-size: 10px;
+    color: #c4c7cf;
+    background: #26262b;
+  }
+  .export-repairs-section {
+    margin: 0 18px 18px;
+    border: 1px solid #2c2c30;
+    border-radius: 8px;
+    background: #1f1f23;
+    overflow: hidden;
+  }
+  .export-repairs-head {
+    margin: 0;
+    padding: 9px 11px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: #c4c7cf;
+    border-bottom: 1px solid #2c2c30;
+    background: #232329;
+  }
+  .export-repairs-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
+  }
+  .export-repairs-table th,
+  .export-repairs-table td {
+    border-bottom: 1px solid #2c2c30;
+    padding: 6px 7px;
+    text-align: left;
+    vertical-align: top;
+  }
+  .export-repairs-table th {
+    color: #a3a3ab;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .export-repairs-table tr:last-child td {
+    border-bottom: none;
+  }
+  .export-repair-type {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 700;
+    color: #eaeaec;
+  }
+  .export-repair-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    flex: 0 0 auto;
+  }
+  .export-repair-note {
+    color: #c4c7cf;
+    line-height: 1.35;
+  }
+  .export-side {
+    border: 1px solid #2c2c30;
+    border-radius: 8px;
+    background: #1f1f23;
+    display: grid;
+    grid-template-rows: auto auto 1fr auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .export-side h3 {
+    margin: 0;
+    padding: 7px 8px;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: #c4c7cf;
+    border-bottom: 1px solid #2c2c30;
+  }
+  .export-log {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
+  }
+  .export-log th, .export-log td {
+    border-bottom: 1px solid #2c2c30;
+    padding: 4px 5px;
+    text-align: left;
+    vertical-align: top;
+  }
+  .export-log th { color: #a3a3ab; font-weight: 600; }
+  .export-note {
+    margin: 8px;
+    border: 1px dashed #3b3b42;
+    border-radius: 6px;
+    padding: 6px;
+    font-size: 10px;
+    color: #c4c7cf;
+    min-height: 44px;
+    overflow: hidden;
+    background: #26262b;
+  }
+  .export-feature-note {
+    display: none;
+  }
+  .export-repair-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    overflow: auto;
     min-height: 0;
   }
-  .print-left img { width: 100%; height: 100%; object-fit: contain; }
-  .print-right { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-  .print-right h1 { font-size: 15pt; margin: 0 0 2mm; color: var(--print-text); }
-  .print-meta { font-size: 8.5pt; color: var(--print-muted); margin-bottom: 5mm; }
-  .print-right table { width: 100%; border-collapse: collapse; font-size: 8pt; }
-  .print-right th, .print-right td { border-bottom: 1px solid var(--print-table-border); padding: 1.5mm 1mm; text-align: left; color: var(--print-text); }
-  .print-right th { color: var(--print-muted); font-weight: 600; }
-  .print-swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; border: 1px solid rgba(128,128,128,.4); }
+  .export-title-metadata {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 10px;
+    color: #a3a3ab;
+    width: 100%;
+  }
+  .export-title-row-value {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    border: 1px solid #3b3b42;
+    border-radius: 999px;
+    background: #26262b;
+    color: #c4c7cf;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .export-repair-item {
+    border: 1px solid #2c2c30;
+    border-left-width: 4px;
+    border-radius: 7px;
+    padding: 7px 8px;
+    background: #26262b;
+    font-size: 10px;
+  }
+  .export-repair-item-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 3px;
+    font-weight: 700;
+    color: #eaeaec;
+  }
+  .export-repair-item-meta {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    color: #a3a3ab;
+  }
+  .export-repair-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid #3b3b42;
+    border-radius: 999px;
+    padding: 1px 6px;
+    background: #1f1f23;
+  }
+
+  .axis-label {
+    position: absolute;
+    font-size: 6px;
+    line-height: 1;
+    color: #c4c7cf;
+    pointer-events: none;
+    user-select: none;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    font-weight: 500;
+  }
 
   @media print {
-    body.print-export-mode > *:not(#printExportRoot) { display: none !important; }
-    body.print-export-mode #printExportRoot { display: block !important; background: var(--print-bg); }
+    @page export-a3 { size: A3 landscape; margin: 0; }
+    .export-report-stack { display: block !important; }
+    body.export-report-mode > *:not(#printExportRoot) { display: none !important; }
+    body.export-report-mode #printExportRoot { display: block !important; }
+    .export-report-page { page: export-a3; width: 420mm; height: 297mm; padding: 0; background: #15151a; }
+    .export-report-shell { border: none; border-radius: 0; }
   }
 </style>
 </head>
-<body>
+<body class="dark">
 
 <div class="menubar">
   <div class="menu-wrap">
     <button class="menu-trigger" id="fileMenuBtn">Bestand ▾</button>
     <div class="menu-dropdown" id="fileMenuDropdown">
-      <button id="menuSaveJson">💾 Database opslaan (.json)</button>
-      <button id="menuLoadJson">📂 Database laden (.json)</button>
+      <button id="menuSaveJson">Database opslaan (.json)</button>
+      <button id="menuSaveAsJson">Database opslaan als...</button>
+      <button id="menuLoadJson">Database laden (.json)</button>
+      <div class="submenu-wrap" id="recentMenuWrap">
+        <button id="menuOpenRecent" class="submenu-trigger">Recente files <span>▸</span></button>
+        <div class="menu-subdropdown" id="recentFilesSubmenu"></div>
+      </div>
       <hr>
-      <button id="menuExportCsv">📄 Reparaties exporteren (CSV)</button>
-      <button id="menuExportSelectedA3">🖨️ Exporteren: geselecteerde module (A3)</button>
-      <button id="menuExportDatabaseA3">🖨️ Exporteren: hele database (A3)</button>
-      <button id="menuPrint">🖨️ Print / PDF (schermweergave)</button>
+      <button id="menuExportCsv">Reparaties exporteren (CSV)</button>
+      <button id="menuExportSelectedA3">Exporteren: huidige module (A3)</button>
+      <button id="menuExportDatabaseA3">Exporteren: hele database (A3)</button>
+      <button id="menuSamplePrint">Testafdruk: voorbeeldrapport</button>
       <hr>
-      <button id="menuNewDb">🗑️ Nieuwe lege database</button>
+      <button id="menuNewDb">Nieuwe lege database</button>
+    </div>
+  </div>
+  <div class="menu-wrap">
+    <button class="menu-trigger" id="libraryMenuBtn">Library ▾</button>
+    <div class="menu-dropdown" id="libraryMenuDropdown">
+      <button id="menuPresetManager">Preset beheer...</button>
     </div>
   </div>
 </div>
@@ -341,10 +950,16 @@
 
 <header class="app-header">
   <h1>PixelTracker</h1>
-  <div style="display:flex; gap:8px; align-items:center;">
-    <button id="themeToggleBtn">🌙 Donkere modus</button>
+  <div class="header-meta">
+    <span id="buildVersionBadge" class="build-badge">Build V2.1.32 Beta</span>
+    <span class="save-status" title="Opslagstatus">
+      <span id="currentSaveStatusDot" class="save-status-dot unsaved" aria-hidden="true"></span>
+      <span id="currentSaveName" class="hint" style="margin:0; white-space:nowrap;">Bestand: nog niet opgeslagen</span>
+    </span>
   </div>
 </header>
+
+<div id="sessionRestoreNotice" class="session-restore-notice">Sessie hersteld</div>
 
 <main>
   <!-- LEFT: module toevoegen (boven) + database (onder, vult de rest van de pagina) -->
@@ -353,11 +968,21 @@
       <h2>+ Module toevoegen</h2>
       <div id="addModuleForm">
         <div class="field">
+          <label>Preset</label>
+          <div class="preset-input-row">
+            <select id="m_module_preset">
+              <option value="">Preset kiezen...</option>
+            </select>
+            <button id="saveModulePresetBtn" class="small" type="button">Opslaan als preset</button>
+          </div>
+          <div class="hint">Vult alle modulevelden in met 1 klik.</div>
+        </div>
+        <div class="field">
           <label>Bedrijf (optioneel)</label>
           <input type="text" id="m_company" placeholder="Bedrijf">
         </div>
         <div class="field">
-          <label>Naam / label <span class="req">*</span></label>
+          <label>Tegel type <span class="req">*</span></label>
           <input type="text" id="m_name" placeholder="bv. Module A3">
         </div>
         <div class="field-row">
@@ -370,9 +995,19 @@
             <input type="text" inputmode="decimal" class="calc-input" id="m_height" value="192">
           </div>
         </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Shader breedte (px)</label>
+            <input type="text" inputmode="decimal" id="m_shader_width" placeholder="bv. 64 of 128/2">
+          </div>
+          <div class="field">
+            <label>Shader hoogte (px)</label>
+            <input type="text" inputmode="decimal" id="m_shader_height" placeholder="bv. 64 of 96-32">
+          </div>
+        </div>
         <div class="calc-hint">Tip: je mag rekenen, bv. 192/2 of 96*2</div>
         <div class="field">
-          <label>Locatie / SN (optioneel — scan of typ)</label>
+          <label>Serienummer (optioneel — scan of typ)</label>
           <input type="text" id="m_sn" placeholder="bv. SN 000205, of scan barcode">
         </div>
         <label class="batch-check">
@@ -403,7 +1038,7 @@
       <button id="addRepairBtn" class="primary" disabled>+ Reparatie (0 px)</button>
     </div>
 
-    <div class="hint" style="margin-bottom:10px;">Klik en sleep voor een blokselectie · shift+klik voegt losse pixels toe · <strong>Ctrl+A</strong> = Pixel (roze, opgelost) · <strong>Ctrl+B</strong> = Pad (blauw, opgelost) · <strong>Esc</strong> = selectie opheffen · <strong>Ctrl+Z</strong> = ongedaan maken · <strong>Ctrl+Shift+Z</strong> = opnieuw</div>
+    <div class="hint" style="margin-bottom:10px;">Klik en sleep voor een blokselectie · shift+klik voegt losse pixels toe · <strong>Ctrl+1</strong> = Nieuwe Pixel gezet · <strong>Ctrl+2</strong> = Pad Paper Gebruikt · <strong>Ctrl+3</strong> = Trace gemaakt · <strong>Esc</strong> = selectie opheffen · <strong>Ctrl+Z</strong> = ongedaan maken · <strong>Ctrl+Shift+Z</strong> = opnieuw</div>
 
     <div class="stats" id="statsRow"></div>
 
@@ -439,7 +1074,7 @@
   <h2>Alle modules — database</h2>
   <table class="moduletable" id="allModulesTable">
     <thead>
-      <tr><th></th><th>Company</th><th>Naam</th><th>Afmeting</th><th>Locatie / SN</th><th>Reparaties</th><th>Open px</th><th>Laatst gewijzigd</th><th></th></tr>
+      <tr><th></th><th>Company</th><th>Tegel type</th><th>Afmeting</th><th>Locatie / SN</th><th>Reparaties</th><th>Open px</th><th>Laatst gewijzigd</th></tr>
     </thead>
     <tbody id="allModulesTbody"></tbody>
   </table>
@@ -458,8 +1093,9 @@
     <div class="field">
       <label>Wat (type reparatie)</label>
       <select id="r_type">
-        <option>Pixel</option>
-        <option>Pad</option>
+        <option>Nieuwe Pixel gezet</option>
+        <option>Pad Paper Gebruikt</option>
+        <option>Trace gemaakt</option>
         <option>Module</option>
         <option>Voeding</option>
         <option>Kabel</option>
@@ -489,54 +1125,965 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="presetModalOverlay">
+  <div class="modal preset-modal">
+    <h3>Preset beheer</h3>
+    <div class="hint" style="margin-bottom:10px;">Presets worden lokaal opgeslagen en blijven beschikbaar in latere sessies.</div>
+    <div class="preset-grid">
+      <div class="preset-card preset-card-wide">
+        <h4>Presets</h4>
+        <div class="preset-input-row">
+          <input type="text" id="presetModuleLabelInput" placeholder="Preset naam">
+          <input type="text" id="presetModuleCompanyInput" placeholder="Bedrijf">
+          <input type="text" id="presetModuleTileInput" placeholder="Tegel type">
+        </div>
+        <div class="preset-input-row">
+          <input type="text" inputmode="decimal" class="calc-input" id="presetModuleWidthInput" placeholder="Breedte" value="192">
+          <input type="text" inputmode="decimal" class="calc-input" id="presetModuleHeightInput" placeholder="Hoogte" value="192">
+          <input type="text" inputmode="decimal" id="presetModuleShaderWidthInput" placeholder="Shader B (px)">
+          <input type="text" inputmode="decimal" id="presetModuleShaderHeightInput" placeholder="Shader H (px)">
+          <label class="batch-check" style="margin:0;">
+            <input type="checkbox" id="presetModuleBatchInput">
+            Batch
+          </label>
+          <button id="presetModuleSaveBtn" class="primary">Toevoegen</button>
+          <button id="presetModuleCancelEditBtn" style="display:none;">Annuleren</button>
+        </div>
+        <div class="preset-list" id="presetModuleList"></div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button id="presetModalCloseBtn">Sluiten</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="unsavedExitModalOverlay">
+  <div class="modal">
+    <h3>Nog niet opgeslagen</h3>
+    <div class="hint">Je database is gewijzigd en nog niet als .json opgeslagen. Wat wil je doen?</div>
+    <div class="modal-actions">
+      <button id="unsavedExitCancelBtn">Annuleren</button>
+      <button id="unsavedExitDiscardBtn" class="danger">Afsluiten zonder opslaan</button>
+      <button id="unsavedExitSaveBtn" class="primary">Opslaan en afsluiten</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="saveAsModalOverlay">
+  <div class="modal">
+    <h3>Database opslaan als</h3>
+    <div class="field">
+      <label>Bestandsnaam</label>
+      <input type="text" id="saveAsNameInput" placeholder="bv. PixelTracker project A">
+      <div class="hint">.json wordt automatisch toegevoegd.</div>
+    </div>
+    <div class="modal-actions">
+      <button id="saveAsCancelBtn">Annuleren</button>
+      <button id="saveAsConfirmBtn" class="primary">Opslaan</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="recentFilesModalOverlay">
+  <div class="modal">
+    <h3>Recente files</h3>
+    <div id="recentFilesList" class="preset-list"></div>
+    <div class="modal-actions">
+      <button id="recentFilesCloseBtn">Sluiten</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="quickEditModalOverlay">
+  <div class="modal">
+    <h3 id="quickEditModalTitle">Bewerken</h3>
+    <p id="quickEditModalSubtitle" class="modal-subtitle"></p>
+    <div class="field">
+      <label id="quickEditModalLabel">Waarde</label>
+      <input type="text" id="quickEditModalInput" placeholder="">
+      <div id="quickEditModalError" class="hint" style="color:#c0142c; display:none;"></div>
+    </div>
+    <div class="modal-actions">
+      <button id="quickEditModalCancelBtn">Annuleren</button>
+      <button id="quickEditModalConfirmBtn" class="primary">Opslaan</button>
+    </div>
+  </div>
+</div>
+
+<div id="moduleContextMenu" class="context-menu">
+  <button id="ctxEditNameBtn" data-action="name">✏️ Naam wijzigen</button>
+  <button id="ctxEditTypeBtn" data-action="type">🧩 Type wijzigen</button>
+  <button id="ctxEditSerialBtn" data-action="serial"># Serienummer wijzigen</button>
+  <button id="ctxDeleteBtn" data-action="delete" class="danger">🗑️ Verwijderen</button>
+</div>
+
+<div class="modal-overlay" id="startupChoiceOverlay" role="dialog" aria-modal="true" aria-labelledby="startupChoiceTitle">
+  <div class="modal startup-modal">
+    <div class="startup-kicker">PixelTracker Beta</div>
+    <h3 id="startupChoiceTitle">Hoe wil je beginnen?</h3>
+    <p class="modal-subtitle">Start met een leeg bestand of ga verder met je laatst bewaarde sessie.</p>
+    <div class="startup-actions">
+      <button id="startupNewFileBtn" class="primary">Nieuw bestand</button>
+      <button id="startupRestoreSessionBtn">Sessie herstellen</button>
+    </div>
+    <div id="startupRestoreStatus" class="hint startup-status"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="appDialogOverlay">
+  <div class="modal">
+    <h3 id="appDialogTitle">Melding</h3>
+    <div id="appDialogMessage" class="hint" style="font-size:12px; color:var(--text); margin-top:8px; line-height:1.4;"></div>
+    <div class="modal-actions">
+      <button id="appDialogCancelBtn" style="display:none;">Annuleren</button>
+      <button id="appDialogConfirmBtn" class="primary">OK</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function() {
   const STORAGE_KEY = 'pixelRepairApp_v2';
-  const THEME_KEY = 'pixelRepairApp_theme';
+  // Bump this on every release update (V2.1, V2.2, V2.3, ...).
+    const BUILD_VERSION = 'V2.1.32 Beta';
+  const MANUAL_SAVE_SNAPSHOT_KEY = 'pixelRepairApp_lastManualSaveSnapshot_v1';
+  const RECENT_FILES_KEY = 'pixelRepairApp_recentFiles_v1';
+  const CURRENT_SAVE_NAME_KEY = 'pixelRepairApp_currentSaveName_v1';
+  const AUTO_SAVE_ENABLED_KEY = 'pixelRepairApp_autoSaveEnabled_v1';
+  const LAST_SESSION_SNAPSHOT_KEY = 'pixelRepairApp_lastSessionSnapshot_v1';
+  const LAST_USED_FILE_SNAPSHOT_KEY = 'pixelRepairApp_lastUsedFileSnapshot_v1';
+  const LAST_KNOWN_GOOD_STATE_KEY = 'pixelRepairApp_lastKnownGoodState_v1';
+  const LAST_KNOWN_GOOD_LIBRARY_KEY = 'pixelRepairApp_lastKnownGoodLibrary_v1';
+  const LIBRARY_BACKUP_KEY = 'pixelRepairApp_library_backup_v1';
+  const FORM_MEMORY_BACKUP_KEY = 'pixelRepairApp_formMemory_backup_v1';
+  const LIBRARY_KEY = 'pixelRepairApp_library_v1';
+  const FORM_MEMORY_KEY = 'pixelRepairApp_formMemory_v1';
+  const BETA_PRESET_RESET_KEY = 'pixelRepairApp_betaPresetReset_v2_1_28';
+  let sessionRestored = false;
+  let libraryRestored = false;
+  let startupChoicePending = true;
   const PALETTE = ['#e6007e', '#2563eb', '#f59e0b', '#16a34a', '#7c3aed', '#dc2626', '#0891b2', '#65a30d'];
+  const STATE_SAVE_DEBOUNCE_MS = 90;
+  const FORM_SAVE_DEBOUNCE_MS = 120;
+  const RECENT_AUTOSAVE_DEBOUNCE_MS = 220;
+
+  let autoSaveEnabled = localStorage.getItem(AUTO_SAVE_ENABLED_KEY) === '1';
 
   function uid() { return Math.random().toString(36).slice(2, 10); }
   function todayISO() { return new Date().toISOString().slice(0, 10); }
   function nowISO() { return new Date().toISOString(); }
+  function formatLocalDateTime(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const d = new Date(raw);
+    if (!Number.isNaN(d.getTime())) {
+      const pad = (n) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+    return raw.replace('T', ' ').slice(0, 16);
+  }
+  function timestampCompact() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  }
+  function slugify(value) {
+    return String(value || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '') || 'module';
+  }
   function escapeHtml(str) {
     return String(str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   }
 
   function defaultState() {
-    const id = uid();
     return {
-      activeId: id,
-      modules: {
-        [id]: {
-          id, company: 'Bazelmans', name: 'Absen 2.9mm', sn: 'SN 000205', width: 192, height: 192,
-          updatedAt: nowISO(),
-          repairs: [
-            { id: uid(), type: 'Pixel', date: '2025-01-21', initials: 'KV', status: 'Open',
-              color: '#e6007e', note: '', pixels: [[1, 190], [2, 190]] }
-          ]
-        }
-      }
+      activeId: null,
+      modules: {}
     };
   }
 
-  function load() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return JSON.parse(raw);
-    } catch (e) {}
-    return defaultState();
+  function defaultFormMemory() {
+    return { company: '', name: '', width: 192, height: 192, shaderWidth: 0, shaderHeight: 0, sn: '', batch: false };
   }
-  function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
-  let state = load();
+  function loadFormMemory() {
+    try {
+      const raw = localStorage.getItem(FORM_MEMORY_KEY) || localStorage.getItem(FORM_MEMORY_BACKUP_KEY);
+      if (!raw) return defaultFormMemory();
+      const parsed = JSON.parse(raw);
+      return {
+        company: String(parsed.company || ''),
+        name: String(parsed.name || ''),
+        width: Math.max(1, parseInt(parsed.width, 10) || 192),
+        height: Math.max(1, parseInt(parsed.height, 10) || 192),
+        shaderWidth: Math.max(0, parseInt(parsed.shaderWidth, 10) || 0),
+        shaderHeight: Math.max(0, parseInt(parsed.shaderHeight, 10) || 0),
+        sn: String(parsed.sn || ''),
+        batch: !!parsed.batch,
+      };
+    } catch (e) {
+      return defaultFormMemory();
+    }
+  }
+
+  let pendingFormSnapshot = null;
+  let formSaveTimer = null;
+
+  function writeFormMemorySnapshot(snapshot) {
+    localStorage.setItem(FORM_MEMORY_KEY, snapshot);
+    localStorage.setItem(FORM_MEMORY_BACKUP_KEY, snapshot);
+  }
+
+  function saveFormMemory(immediate) {
+    const snapshot = JSON.stringify({
+      company: document.getElementById('m_company').value.trim(),
+      name: document.getElementById('m_name').value.trim(),
+      width: Math.max(1, parseInt(document.getElementById('m_width').value, 10) || 192),
+      height: Math.max(1, parseInt(document.getElementById('m_height').value, 10) || 192),
+      shaderWidth: Math.max(0, parseInt(document.getElementById('m_shader_width').value, 10) || 0),
+      shaderHeight: Math.max(0, parseInt(document.getElementById('m_shader_height').value, 10) || 0),
+      sn: document.getElementById('m_sn').value.trim(),
+      batch: document.getElementById('m_batch').checked,
+    });
+    pendingFormSnapshot = snapshot;
+    if (immediate) {
+      if (formSaveTimer) {
+        clearTimeout(formSaveTimer);
+        formSaveTimer = null;
+      }
+      writeFormMemorySnapshot(pendingFormSnapshot);
+      pendingFormSnapshot = null;
+      return;
+    }
+    if (formSaveTimer) return;
+    formSaveTimer = setTimeout(() => {
+      formSaveTimer = null;
+      if (!pendingFormSnapshot) return;
+      writeFormMemorySnapshot(pendingFormSnapshot);
+      pendingFormSnapshot = null;
+    }, FORM_SAVE_DEBOUNCE_MS);
+  }
+
+  function applyFormMemory() {
+    const mem = loadFormMemory();
+    document.getElementById('m_company').value = mem.company;
+    document.getElementById('m_name').value = mem.name;
+    document.getElementById('m_width').value = mem.width;
+    document.getElementById('m_height').value = mem.height;
+    document.getElementById('m_shader_width').value = mem.shaderWidth || '';
+    document.getElementById('m_shader_height').value = mem.shaderHeight || '';
+    document.getElementById('m_sn').value = mem.sn;
+    document.getElementById('m_batch').checked = mem.batch;
+  }
+
+  function defaultLibrary() {
+    return { companies: [], tileTypes: [], modulePresets: [] };
+  }
+
+  function resetBetaPresetLibraryOnce() {
+    if (localStorage.getItem(BETA_PRESET_RESET_KEY) === '1') return;
+    const emptyLibrary = JSON.stringify(defaultLibrary());
+    localStorage.setItem(LIBRARY_KEY, emptyLibrary);
+    localStorage.setItem(LIBRARY_BACKUP_KEY, emptyLibrary);
+    localStorage.setItem(LAST_KNOWN_GOOD_LIBRARY_KEY, emptyLibrary);
+    localStorage.setItem(BETA_PRESET_RESET_KEY, '1');
+  }
+
+  function uniqueSorted(values) {
+    return Array.from(new Set(values.map(v => String(v).trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'nl'));
+  }
+
+  function uniquePresetLabel(baseLabel, exceptId) {
+    const base = String(baseLabel || '').trim() || 'Module preset';
+    const presets = Array.isArray(library.modulePresets) ? library.modulePresets : [];
+    const normalize = (v) => String(v || '').trim().toLowerCase();
+    if (!presets.some(p => p.id !== exceptId && normalize(p.label) === normalize(base))) return base;
+    let n = 2;
+    while (presets.some(p => p.id !== exceptId && normalize(p.label) === normalize(base + ' (' + n + ')'))) n += 1;
+    return base + ' (' + n + ')';
+  }
+
+  function sanitizeModulePreset(raw) {
+    const width = Math.max(1, parseInt(raw.width, 10) || 192);
+    const height = Math.max(1, parseInt(raw.height, 10) || 192);
+    const shaderWidth = Math.max(0, parseInt(raw.shaderWidth, 10) || 0);
+    const shaderHeight = Math.max(0, parseInt(raw.shaderHeight, 10) || 0);
+    const company = String(raw.company || '').trim();
+    const tileType = String(raw.tileType || raw.name || '').trim();
+    const fallback = [company, tileType, width + 'x' + height].filter(Boolean).join(' · ') || 'Module preset';
+    return {
+      id: String(raw.id || uid()),
+      label: String(raw.label || fallback).trim() || fallback,
+      company,
+      tileType,
+      width,
+      height,
+      shaderWidth,
+      shaderHeight,
+      batch: !!raw.batch,
+    };
+  }
+
+  function loadLibrary() {
+    function parseLibrarySnapshot(raw) {
+      try {
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return {
+          companies: uniqueSorted(Array.isArray(parsed.companies) ? parsed.companies : []),
+          tileTypes: uniqueSorted(Array.isArray(parsed.tileTypes) ? parsed.tileTypes : []),
+          modulePresets: Array.isArray(parsed.modulePresets) ? parsed.modulePresets.map(sanitizeModulePreset) : [],
+        };
+      } catch (e) {
+        return null;
+      }
+    }
+
+    try {
+      const primary = localStorage.getItem(LIBRARY_KEY);
+      const backup = localStorage.getItem(LIBRARY_BACKUP_KEY);
+      const raw = primary || backup;
+      const parsedPrimary = parseLibrarySnapshot(raw);
+      if (parsedPrimary) {
+        libraryRestored = !primary && !!backup;
+        return parsedPrimary;
+      }
+
+      const parsedKnownGood = parseLibrarySnapshot(localStorage.getItem(LAST_KNOWN_GOOD_LIBRARY_KEY));
+      if (parsedKnownGood) {
+        libraryRestored = true;
+        return parsedKnownGood;
+      }
+
+      const rawLastUsed = localStorage.getItem(LAST_USED_FILE_SNAPSHOT_KEY);
+      if (rawLastUsed) {
+        const lastUsed = JSON.parse(rawLastUsed);
+        const parsedLastUsedLibrary = parseLibrarySnapshot(lastUsed && lastUsed.librarySnapshot ? lastUsed.librarySnapshot : null);
+        if (parsedLastUsedLibrary) {
+          libraryRestored = true;
+          return parsedLastUsedLibrary;
+        }
+      }
+
+      return defaultLibrary();
+    } catch (e) {
+      return defaultLibrary();
+    }
+  }
+
+  function saveLibrary() {
+    const snapshot = JSON.stringify(library);
+    localStorage.setItem(LIBRARY_KEY, snapshot);
+    localStorage.setItem(LIBRARY_BACKUP_KEY, snapshot);
+    localStorage.setItem(LAST_KNOWN_GOOD_LIBRARY_KEY, snapshot);
+  }
+
+  function load() {
+    function parseStateSnapshot(raw) {
+      try {
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object' || typeof parsed.modules !== 'object') return null;
+        const modules = parsed.modules || {};
+        const activeId = parsed.activeId && modules[parsed.activeId] ? parsed.activeId : (Object.keys(modules)[0] || null);
+        return { activeId, modules, saveName: parsed.saveName || '' };
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function loadAutosavedSnapshotFallback() {
+      try {
+        const saveName = String(localStorage.getItem(CURRENT_SAVE_NAME_KEY) || '').trim();
+        if (!saveName) return null;
+
+        const rawLastUsed = localStorage.getItem(LAST_USED_FILE_SNAPSHOT_KEY);
+        if (rawLastUsed) {
+          const lastUsed = JSON.parse(rawLastUsed);
+          if (lastUsed && typeof lastUsed.snapshot === 'string' && String(lastUsed.label || '').trim() === saveName) {
+            const restoredLastUsed = parseStateSnapshot(lastUsed.snapshot);
+            if (restoredLastUsed) {
+              restoredLastUsed.saveName = saveName;
+              return restoredLastUsed;
+            }
+          }
+        }
+
+        const rawRecent = localStorage.getItem(RECENT_FILES_KEY);
+        if (!rawRecent) return null;
+        const recent = JSON.parse(rawRecent);
+        if (!Array.isArray(recent)) return null;
+        const matched = recent.find(x => x && typeof x.snapshot === 'string' && String(x.label || '').trim() === saveName);
+        const item = matched || recent.find(x => x && typeof x.snapshot === 'string') || null;
+        if (!item) return null;
+        const restored = parseStateSnapshot(item.snapshot);
+        if (!restored) return null;
+        restored.saveName = String(item.label || saveName).trim();
+        return restored;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    try {
+      const primary = localStorage.getItem(STORAGE_KEY);
+      const backup = localStorage.getItem(LAST_SESSION_SNAPSHOT_KEY);
+      const lastKnownGood = localStorage.getItem(LAST_KNOWN_GOOD_STATE_KEY);
+      const raw = primary || backup;
+      if (!raw) {
+        const knownGoodRestore = parseStateSnapshot(lastKnownGood);
+        if (knownGoodRestore) {
+          sessionRestored = true;
+          return knownGoodRestore;
+        }
+        const fallback = loadAutosavedSnapshotFallback();
+        if (fallback) {
+          sessionRestored = true;
+          return fallback;
+        }
+        return defaultState();
+      }
+      const restoredPrimary = parseStateSnapshot(raw);
+      if (!restoredPrimary) {
+        const knownGoodRestore = parseStateSnapshot(lastKnownGood);
+        if (knownGoodRestore) {
+          sessionRestored = true;
+          return knownGoodRestore;
+        }
+        const fallback = loadAutosavedSnapshotFallback();
+        if (fallback) {
+          sessionRestored = true;
+          return fallback;
+        }
+        return defaultState();
+      }
+      const preferredNamedRestore = loadAutosavedSnapshotFallback();
+      if (preferredNamedRestore) {
+        const primaryModuleCount = Object.keys(restoredPrimary.modules || {}).length;
+        const fallbackModuleCount = Object.keys(preferredNamedRestore.modules || {}).length;
+        if (primaryModuleCount === 0 && fallbackModuleCount > 0) {
+          sessionRestored = true;
+          return preferredNamedRestore;
+        }
+      }
+      sessionRestored = Object.keys(restoredPrimary.modules || {}).length > 0 || !!restoredPrimary.activeId;
+      return { activeId: restoredPrimary.activeId, modules: restoredPrimary.modules };
+    } catch (e) {
+      const fallback = loadAutosavedSnapshotFallback();
+      if (fallback) {
+        sessionRestored = true;
+        return fallback;
+      }
+      return defaultState();
+    }
+  }
+  let pendingStateSnapshot = null;
+  let stateSaveTimer = null;
+
+  function writeStateSnapshot(snapshot) {
+    localStorage.setItem(STORAGE_KEY, snapshot);
+    localStorage.setItem(LAST_SESSION_SNAPSHOT_KEY, snapshot);
+    try {
+      const parsed = JSON.parse(snapshot);
+      if (parsed && typeof parsed === 'object' && parsed.modules && Object.keys(parsed.modules).length > 0) {
+        localStorage.setItem(LAST_KNOWN_GOOD_STATE_KEY, snapshot);
+      }
+    } catch (e) {}
+  }
+
+  function save(immediate) {
+    pendingStateSnapshot = JSON.stringify(state);
+    if (immediate) {
+      if (stateSaveTimer) {
+        clearTimeout(stateSaveTimer);
+        stateSaveTimer = null;
+      }
+      writeStateSnapshot(pendingStateSnapshot);
+      pendingStateSnapshot = null;
+      flushAutosaveRecentSnapshot();
+      updateSaveStatusIndicator();
+      return;
+    }
+    if (stateSaveTimer) return;
+    stateSaveTimer = setTimeout(() => {
+      stateSaveTimer = null;
+      if (!pendingStateSnapshot) return;
+      writeStateSnapshot(pendingStateSnapshot);
+      pendingStateSnapshot = null;
+      scheduleAutosaveRecentSnapshot();
+      updateSaveStatusIndicator();
+    }, STATE_SAVE_DEBOUNCE_MS);
+    scheduleAutosaveRecentSnapshot();
+    updateSaveStatusIndicator();
+  }
+
+  function flushPendingStorageWrites() {
+    if (stateSaveTimer) {
+      clearTimeout(stateSaveTimer);
+      stateSaveTimer = null;
+    }
+    if (formSaveTimer) {
+      clearTimeout(formSaveTimer);
+      formSaveTimer = null;
+    }
+    if (pendingStateSnapshot) {
+      writeStateSnapshot(pendingStateSnapshot);
+      pendingStateSnapshot = null;
+    }
+    if (pendingFormSnapshot) {
+      writeFormMemorySnapshot(pendingFormSnapshot);
+      pendingFormSnapshot = null;
+    }
+    flushAutosaveRecentSnapshot();
+  }
+
+  function flushSessionAndLibrarySnapshot() {
+    flushPendingStorageWrites();
+    if (!startupChoicePending) {
+      try {
+        localStorage.setItem(LAST_SESSION_SNAPSHOT_KEY, JSON.stringify(state));
+      } catch (e) {}
+    }
+    try {
+      const libSnapshot = JSON.stringify(library || defaultLibrary());
+      localStorage.setItem(LIBRARY_KEY, libSnapshot);
+      localStorage.setItem(LIBRARY_BACKUP_KEY, libSnapshot);
+    } catch (e) {}
+    try {
+      saveFormMemory(true);
+    } catch (e) {}
+  }
+  function stateSnapshot() { return JSON.stringify(state); }
+
+  function loadRecentFiles() {
+    try {
+      const raw = localStorage.getItem(RECENT_FILES_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      const list = Array.isArray(parsed)
+        ? parsed.filter(item => item && typeof item.snapshot === 'string' && typeof item.label === 'string')
+        : [];
+      if (list.length) return list;
+
+      const rawLastUsed = localStorage.getItem(LAST_USED_FILE_SNAPSHOT_KEY);
+      if (!rawLastUsed) return [];
+      const lastUsed = JSON.parse(rawLastUsed);
+      if (!lastUsed || typeof lastUsed.snapshot !== 'string' || typeof lastUsed.label !== 'string') return [];
+      return [{
+        id: uid(),
+        label: String(lastUsed.label || '').trim(),
+        savedAt: lastUsed.savedAt || nowISO(),
+        snapshot: lastUsed.snapshot,
+      }].filter(item => item.label);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveRecentFiles(list) {
+    try {
+      localStorage.setItem(RECENT_FILES_KEY, JSON.stringify(list.slice(0, 12)));
+    } catch (e) {}
+  }
+
+  function setLastUsedFileSnapshot(label, snapshot, savedAt) {
+    const cleanLabel = String(label || '').trim();
+    if (!cleanLabel) return;
+    let librarySnapshot = null;
+    try {
+      librarySnapshot = JSON.stringify(library || defaultLibrary());
+    } catch (e) {
+      librarySnapshot = null;
+    }
+    const payload = {
+      label: cleanLabel,
+      savedAt: savedAt || nowISO(),
+      snapshot: typeof snapshot === 'string' ? snapshot : stateSnapshot(),
+      librarySnapshot,
+    };
+    try {
+      localStorage.setItem(LAST_USED_FILE_SNAPSHOT_KEY, JSON.stringify(payload));
+    } catch (e) {}
+  }
+
+  function rememberRecentFile(label) {
+    const item = {
+      id: uid(),
+      label: String(label || '').trim() || 'database',
+      savedAt: nowISO(),
+      snapshot: stateSnapshot()
+    };
+    const current = loadRecentFiles().filter(x => x.label !== item.label);
+    current.unshift(item);
+    saveRecentFiles(current);
+  }
+
+  function upsertRecentFileSnapshot(label, snapshot, savedAt) {
+    const cleanLabel = String(label || '').trim();
+    if (!cleanLabel) return;
+    setLastUsedFileSnapshot(cleanLabel, snapshot, savedAt);
+    const item = {
+      id: uid(),
+      label: cleanLabel,
+      savedAt: savedAt || nowISO(),
+      snapshot: typeof snapshot === 'string' ? snapshot : stateSnapshot(),
+    };
+    const current = loadRecentFiles().filter(x => x.label !== item.label);
+    current.unshift(item);
+    saveRecentFiles(current);
+  }
+
+  let autosaveRecentTimer = null;
+
+  function scheduleAutosaveRecentSnapshot() {
+    if (!currentSaveName) return;
+    if (autosaveRecentTimer) return;
+    autosaveRecentTimer = setTimeout(() => {
+      autosaveRecentTimer = null;
+      upsertRecentFileSnapshot(currentSaveName, stateSnapshot(), nowISO());
+    }, RECENT_AUTOSAVE_DEBOUNCE_MS);
+  }
+
+  function flushAutosaveRecentSnapshot() {
+    if (!currentSaveName) return;
+    if (autosaveRecentTimer) {
+      clearTimeout(autosaveRecentTimer);
+      autosaveRecentTimer = null;
+    }
+    upsertRecentFileSnapshot(currentSaveName, stateSnapshot(), nowISO());
+    if (autoSaveEnabled) {
+      // Autosave geldt als opslagmoment voor deze actieve file.
+      markManualSaveSnapshot();
+    }
+  }
+
+  function setAutoSaveEnabled(enabled) {
+    autoSaveEnabled = !!enabled;
+    localStorage.setItem(AUTO_SAVE_ENABLED_KEY, autoSaveEnabled ? '1' : '0');
+  }
+
+  function isAutosaveActive() {
+    if (!currentSaveName) return false;
+    if (autoSaveEnabled) return true;
+    return localStorage.getItem(AUTO_SAVE_ENABLED_KEY) === '1';
+  }
+
+  function hasUnsavedManualSave() {
+    return stateSnapshot() !== lastManualSaveSnapshot;
+  }
+
+  function markManualSaveSnapshot() {
+    lastManualSaveSnapshot = stateSnapshot();
+    localStorage.setItem(MANUAL_SAVE_SNAPSHOT_KEY, lastManualSaveSnapshot);
+    updateSaveStatusIndicator();
+  }
+
+  function setCurrentSaveName(name) {
+    currentSaveName = String(name || '').trim();
+    localStorage.setItem(CURRENT_SAVE_NAME_KEY, currentSaveName);
+    if (currentSaveName) {
+      setLastUsedFileSnapshot(currentSaveName, stateSnapshot(), nowISO());
+    }
+    updateCurrentSaveNameLabel();
+  }
+
+  function updateDocumentTitle() {
+    document.title = currentSaveName ? `PixelTracker - ${currentSaveName}` : 'PixelTracker';
+  }
+
+  function updateSaveStatusIndicator() {
+    const dot = document.getElementById('currentSaveStatusDot');
+    const hasName = !!currentSaveName;
+    const isSaved = hasName && !hasUnsavedManualSave();
+    if (dot) {
+      dot.classList.toggle('saved', isSaved);
+      dot.classList.toggle('unsaved', !isSaved);
+      dot.title = isSaved ? 'Opgeslagen' : 'Niet opgeslagen';
+    }
+  }
+
+  function updateCurrentSaveNameLabel() {
+    const el = document.getElementById('currentSaveName');
+    if (el) el.textContent = currentSaveName ? `Bestand: ${currentSaveName}` : 'Bestand: nog niet opgeslagen';
+    updateDocumentTitle();
+    updateSaveStatusIndicator();
+  }
+
+  function renderBuildVersion() {
+    const el = document.getElementById('buildVersionBadge');
+    if (!el) return;
+    el.textContent = 'Build ' + BUILD_VERSION;
+  }
+
+  function exportDatabaseJson(customBaseName) {
+    const json = JSON.stringify(state, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const active = activeModule();
+    const fallbackScope = active ? slugify(active.name) : 'database';
+    const originalName = String(customBaseName || currentSaveName || fallbackScope || 'database').trim();
+    const base = slugify(originalName);
+    a.download = `${base}_${timestampCompact()}.json`;
+    a.click();
+    setCurrentSaveName(originalName);
+    setAutoSaveEnabled(true);
+    rememberRecentFile(originalName);
+    markManualSaveSnapshot();
+    flushAutosaveRecentSnapshot();
+  }
+
+  const startupRestoreState = load();
+  const startupRestoreAvailable = sessionRestored || Object.keys(startupRestoreState.modules || {}).length > 0;
+  const startupRestoreName = localStorage.getItem(CURRENT_SAVE_NAME_KEY) || startupRestoreState.saveName || '';
+  let state = defaultState();
+  let lastManualSaveSnapshot = localStorage.getItem(MANUAL_SAVE_SNAPSHOT_KEY) || stateSnapshot();
+  let currentSaveName = '';
+  if (currentSaveName && !autoSaveEnabled) {
+    // Backward compatible: eerder opgeslagen bestanden krijgen automatisch autosave.
+    setAutoSaveEnabled(true);
+  }
+  resetBetaPresetLibraryOnce();
+  let library = loadLibrary();
   let selected = new Set(); // "x,y"
   let editingRepairId = null;
   let cellSize = 29; // default: helemaal ingezoomd
   let lastInitials = '';
+  let pendingCloseAfterSaveAs = false;
+
+  updateCurrentSaveNameLabel();
+  renderBuildVersion();
+  if (currentSaveName) {
+    const moduleCount = Object.keys((state && state.modules) || {}).length;
+    if (moduleCount > 0) {
+      upsertRecentFileSnapshot(currentSaveName, stateSnapshot(), nowISO());
+    }
+  }
 
   function activeModule() { return state.modules[state.activeId] || null; }
   function pxKey(x, y) { return x + ',' + y; }
   function touchModule(m) { m.updatedAt = nowISO(); }
+
+  function syncLibraryFromModules() {
+    const companies = Object.values(state.modules).map(m => (m.company || '').trim()).filter(Boolean);
+    const tileTypes = Object.values(state.modules).map(m => (m.name || '').trim()).filter(Boolean);
+    library.companies = uniqueSorted([...(library.companies || []), ...companies]);
+    library.tileTypes = uniqueSorted([...(library.tileTypes || []), ...tileTypes]);
+    saveLibrary();
+  }
+
+  function renderLibraryPresetDropdowns() {
+    const modulePresetSelect = document.getElementById('m_module_preset');
+
+    const selectedPreset = modulePresetSelect.value;
+    modulePresetSelect.innerHTML = '<option value="">Preset kiezen...</option>';
+    (library.modulePresets || [])
+      .slice()
+      .sort((a, b) => a.label.localeCompare(b.label, 'nl'))
+      .forEach(item => {
+        const opt = document.createElement('option');
+        opt.value = item.id;
+        opt.textContent = item.label;
+        modulePresetSelect.appendChild(opt);
+      });
+    if (selectedPreset && (library.modulePresets || []).some(p => p.id === selectedPreset)) {
+      modulePresetSelect.value = selectedPreset;
+    }
+  }
+
+  function modulePresetFromForm() {
+    const company = document.getElementById('m_company').value.trim();
+    const tileType = document.getElementById('m_name').value.trim();
+    const width = Math.max(1, parseInt(document.getElementById('m_width').value, 10) || 192);
+    const height = Math.max(1, parseInt(document.getElementById('m_height').value, 10) || 192);
+    const shaderWidth = Math.max(0, parseInt(document.getElementById('m_shader_width').value, 10) || 0);
+    const shaderHeight = Math.max(0, parseInt(document.getElementById('m_shader_height').value, 10) || 0);
+    const batch = document.getElementById('m_batch').checked;
+    const label = [company, tileType, width + 'x' + height].filter(Boolean).join(' · ') || 'Module preset';
+    return { company, tileType, width, height, shaderWidth, shaderHeight, batch, label };
+  }
+
+  function applyModulePresetById(id) {
+    const preset = (library.modulePresets || []).find(p => p.id === id);
+    if (!preset) return;
+    document.getElementById('m_company').value = preset.company || '';
+    document.getElementById('m_name').value = preset.tileType || '';
+    document.getElementById('m_width').value = String(preset.width || 192);
+    document.getElementById('m_height').value = String(preset.height || 192);
+    document.getElementById('m_shader_width').value = preset.shaderWidth ? String(preset.shaderWidth) : '';
+    document.getElementById('m_shader_height').value = preset.shaderHeight ? String(preset.shaderHeight) : '';
+    document.getElementById('m_batch').checked = !!preset.batch;
+    if (preset.batch && !document.getElementById('m_sn').value.trim()) {
+      document.getElementById('m_sn').value = '1';
+    }
+    saveFormMemory();
+  }
+
+  let editingModulePresetId = null;
+
+  function resetModulePresetForm() {
+    editingModulePresetId = null;
+    document.getElementById('presetModuleLabelInput').value = '';
+    document.getElementById('presetModuleCompanyInput').value = '';
+    document.getElementById('presetModuleTileInput').value = '';
+    document.getElementById('presetModuleWidthInput').value = '192';
+    document.getElementById('presetModuleHeightInput').value = '192';
+    document.getElementById('presetModuleShaderWidthInput').value = '';
+    document.getElementById('presetModuleShaderHeightInput').value = '';
+    document.getElementById('presetModuleBatchInput').checked = false;
+    document.getElementById('presetModuleSaveBtn').textContent = 'Toevoegen';
+    document.getElementById('presetModuleCancelEditBtn').style.display = 'none';
+  }
+
+  function fillModulePresetForm(preset) {
+    editingModulePresetId = preset.id;
+    document.getElementById('presetModuleLabelInput').value = preset.label;
+    document.getElementById('presetModuleCompanyInput').value = preset.company || '';
+    document.getElementById('presetModuleTileInput').value = preset.tileType || '';
+    document.getElementById('presetModuleWidthInput').value = String(preset.width || 192);
+    document.getElementById('presetModuleHeightInput').value = String(preset.height || 192);
+    document.getElementById('presetModuleShaderWidthInput').value = preset.shaderWidth ? String(preset.shaderWidth) : '';
+    document.getElementById('presetModuleShaderHeightInput').value = preset.shaderHeight ? String(preset.shaderHeight) : '';
+    document.getElementById('presetModuleBatchInput').checked = !!preset.batch;
+    document.getElementById('presetModuleSaveBtn').textContent = 'Opslaan wijziging';
+    document.getElementById('presetModuleCancelEditBtn').style.display = 'inline-block';
+  }
+
+  function readModulePresetForm() {
+    const labelRaw = document.getElementById('presetModuleLabelInput').value.trim();
+    const company = document.getElementById('presetModuleCompanyInput').value.trim();
+    const tileType = document.getElementById('presetModuleTileInput').value.trim();
+    const width = Math.max(1, parseInt(document.getElementById('presetModuleWidthInput').value, 10) || 192);
+    const height = Math.max(1, parseInt(document.getElementById('presetModuleHeightInput').value, 10) || 192);
+    const shaderWidth = Math.max(0, parseInt(document.getElementById('presetModuleShaderWidthInput').value, 10) || 0);
+    const shaderHeight = Math.max(0, parseInt(document.getElementById('presetModuleShaderHeightInput').value, 10) || 0);
+    const batch = document.getElementById('presetModuleBatchInput').checked;
+    if (!tileType) {
+      uiAlert('Geef een Tegel type op voor de preset.');
+      return null;
+    }
+    const autoLabel = [company, tileType, width + 'x' + height].filter(Boolean).join(' · ') || 'Module preset';
+    const label = uniquePresetLabel(labelRaw || autoLabel, editingModulePresetId);
+    return { label, company, tileType, width, height, shaderWidth, shaderHeight, batch };
+  }
+
+  function saveModulePreset(data, existingId) {
+    const presets = Array.isArray(library.modulePresets) ? [...library.modulePresets] : [];
+    const normalized = sanitizeModulePreset({ ...data, id: existingId || uid() });
+    const idx = existingId ? presets.findIndex(p => p.id === existingId) : -1;
+    if (idx >= 0) presets[idx] = normalized;
+    else presets.push(normalized);
+    library.modulePresets = presets;
+    saveAndRefreshPresets();
+    return normalized;
+  }
+
+  function saveModulePresetFromModal() {
+    const data = readModulePresetForm();
+    if (!data) return;
+    saveModulePreset(data, editingModulePresetId);
+    resetModulePresetForm();
+  }
+
+  function saveQuickModulePresetFromForm() {
+    const data = modulePresetFromForm();
+    if (!data.tileType) {
+      uiAlert('Geef eerst een Tegel type op voordat je een module preset opslaat.');
+      document.getElementById('m_name').focus();
+      return;
+    }
+    data.label = uniquePresetLabel(data.label);
+    const saved = saveModulePreset(data, null);
+    document.getElementById('m_module_preset').value = saved.id;
+  }
+
+  function deleteModulePreset(id) {
+    const preset = (library.modulePresets || []).find(p => p.id === id);
+    if (!preset) return;
+    uiConfirm('Module preset verwijderen: "' + preset.label + '"?', () => {
+      library.modulePresets = (library.modulePresets || []).filter(p => p.id !== id);
+      saveAndRefreshPresets();
+      if (document.getElementById('m_module_preset').value === id) {
+        document.getElementById('m_module_preset').value = '';
+      }
+    }, { title: 'Preset verwijderen', confirmText: 'Verwijderen', danger: true });
+  }
+
+  function saveAndRefreshPresets() {
+    saveLibrary();
+    renderLibraryPresetDropdowns();
+    renderPresetManagerLists();
+  }
+
+  function renderModulePresetManagerList() {
+    const wrap = document.getElementById('presetModuleList');
+    const list = (library.modulePresets || []).slice().sort((a, b) => a.label.localeCompare(b.label, 'nl'));
+    if (!list.length) {
+      wrap.innerHTML = '<div class="preset-empty">Nog geen module presets toegevoegd.</div>';
+      return;
+    }
+    wrap.innerHTML = '';
+    list.forEach(preset => {
+      const row = document.createElement('div');
+      row.className = 'preset-row';
+
+      const left = document.createElement('div');
+      left.style.flex = '1';
+      left.innerHTML = '<div class="preset-row-name">' + escapeHtml(preset.label) + '</div>' +
+        '<div class="preset-meta">' +
+        escapeHtml((preset.company || '—') + ' · ' + (preset.tileType || '') + ' · ' + preset.width + 'x' + preset.height + ' px' + (preset.shaderWidth > 0 && preset.shaderHeight > 0 ? ' · Shader ' + preset.shaderWidth + 'x' + preset.shaderHeight : '') + (preset.batch ? ' · Batch' : '')) +
+        '</div>';
+
+      const actions = document.createElement('div');
+      actions.className = 'preset-row-actions';
+
+      const useBtn = document.createElement('button');
+      useBtn.className = 'small';
+      useBtn.textContent = 'Gebruik';
+      useBtn.addEventListener('click', () => {
+        document.getElementById('m_module_preset').value = preset.id;
+        applyModulePresetById(preset.id);
+        closePresetManager();
+      });
+
+      const editBtn = document.createElement('button');
+      editBtn.className = 'small';
+      editBtn.textContent = 'Wijzig';
+      editBtn.addEventListener('click', () => fillModulePresetForm(preset));
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'small danger';
+      delBtn.textContent = 'Verwijder';
+      delBtn.addEventListener('click', () => deleteModulePreset(preset.id));
+
+      actions.appendChild(useBtn);
+      actions.appendChild(editBtn);
+      actions.appendChild(delBtn);
+
+      row.appendChild(left);
+      row.appendChild(actions);
+      wrap.appendChild(row);
+    });
+  }
+
+  function renderPresetManagerLists() {
+    renderModulePresetManagerList();
+  }
+
+  function openPresetManager() {
+    renderPresetManagerLists();
+    resetModulePresetForm();
+    document.getElementById('presetModalOverlay').classList.add('show');
+    document.getElementById('presetModuleLabelInput').focus();
+  }
+
+  function closePresetManager() {
+    document.getElementById('presetModalOverlay').classList.remove('show');
+  }
 
   // ---------- Undo / redo (Ctrl+Z / Ctrl+Shift+Z) ----------
   const UNDO_LIMIT = 50;
@@ -595,18 +2142,10 @@
     return 1000;
   }
 
-  // ---------- Theme ----------
-  function applyTheme(mode) {
-    document.body.classList.toggle('dark', mode === 'dark');
-    document.getElementById('themeToggleBtn').textContent = mode === 'dark' ? '☀️ Lichte modus' : '🌙 Donkere modus';
-    localStorage.setItem(THEME_KEY, mode);
-  }
-  document.getElementById('themeToggleBtn').addEventListener('click', () => {
-    const isDark = document.body.classList.contains('dark');
-    applyTheme(isDark ? 'light' : 'dark');
-    renderCanvas();
+  document.getElementById('m_module_preset').addEventListener('change', (e) => {
+    if (!e.target.value) return;
+    applyModulePresetById(e.target.value);
   });
-  applyTheme(localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark');
 
   // ---------- Calculator-enabled fields ----------
   function evaluateExpression(expr) {
@@ -640,79 +2179,234 @@
   }
   bindCalcField(document.getElementById('m_width'), { min: 1, fallback: 192 });
   bindCalcField(document.getElementById('m_height'), { min: 1, fallback: 192 });
+  bindCalcField(document.getElementById('m_shader_width'), { min: 0, fallback: 0 });
+  bindCalcField(document.getElementById('m_shader_height'), { min: 0, fallback: 0 });
+  bindCalcField(document.getElementById('presetModuleWidthInput'), { min: 1, fallback: 192 });
+  bindCalcField(document.getElementById('presetModuleHeightInput'), { min: 1, fallback: 192 });
+  bindCalcField(document.getElementById('presetModuleShaderWidthInput'), { min: 0, fallback: 0 });
+  bindCalcField(document.getElementById('presetModuleShaderHeightInput'), { min: 0, fallback: 0 });
+
+  // ---------- App-styled dialog (vervangt native alert/confirm) ----------
+  const appDialogOverlay = document.getElementById('appDialogOverlay');
+  const appDialogTitle = document.getElementById('appDialogTitle');
+  const appDialogMessage = document.getElementById('appDialogMessage');
+  const appDialogCancelBtn = document.getElementById('appDialogCancelBtn');
+  const appDialogConfirmBtn = document.getElementById('appDialogConfirmBtn');
+  let appDialogOnConfirm = null;
+  let appDialogOnCancel = null;
+
+  function closeAppDialog() {
+    appDialogOnConfirm = null;
+    appDialogOnCancel = null;
+    appDialogOverlay.classList.remove('show');
+    appDialogConfirmBtn.classList.remove('danger');
+  }
+
+  function openAppDialog(opts) {
+    appDialogTitle.textContent = opts.title || 'Melding';
+    appDialogMessage.textContent = opts.message || '';
+    appDialogConfirmBtn.textContent = opts.confirmText || 'OK';
+    appDialogCancelBtn.textContent = opts.cancelText || 'Annuleren';
+    appDialogCancelBtn.style.display = opts.showCancel ? 'inline-block' : 'none';
+    appDialogConfirmBtn.classList.toggle('danger', !!opts.dangerConfirm);
+    appDialogOnConfirm = typeof opts.onConfirm === 'function' ? opts.onConfirm : null;
+    appDialogOnCancel = typeof opts.onCancel === 'function' ? opts.onCancel : null;
+    appDialogOverlay.classList.add('show');
+  }
+
+  function uiAlert(message, title) {
+    openAppDialog({
+      title: title || 'Melding',
+      message,
+      confirmText: 'OK',
+      showCancel: false,
+      onConfirm: closeAppDialog,
+    });
+  }
+
+  function uiConfirm(message, onYes, opts) {
+    const cfg = opts || {};
+    openAppDialog({
+      title: cfg.title || 'Bevestigen',
+      message,
+      confirmText: cfg.confirmText || 'Doorgaan',
+      cancelText: cfg.cancelText || 'Annuleren',
+      showCancel: true,
+      dangerConfirm: !!cfg.danger,
+      onConfirm: () => {
+        closeAppDialog();
+        if (typeof onYes === 'function') onYes();
+      },
+      onCancel: closeAppDialog,
+    });
+  }
+
+  appDialogConfirmBtn.addEventListener('click', () => {
+    if (appDialogOnConfirm) appDialogOnConfirm();
+    else closeAppDialog();
+  });
+  appDialogCancelBtn.addEventListener('click', () => {
+    if (appDialogOnCancel) appDialogOnCancel();
+    else closeAppDialog();
+  });
+  appDialogOverlay.addEventListener('click', (e) => {
+    if (e.target.id === 'appDialogOverlay') {
+      if (appDialogOnCancel) appDialogOnCancel();
+      else closeAppDialog();
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (!appDialogOverlay.classList.contains('show')) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (appDialogOnCancel) appDialogOnCancel();
+      else closeAppDialog();
+      return;
+    }
+    if (e.key === 'Enter') {
+      const tag = (document.activeElement && document.activeElement.tagName) || '';
+      if (tag === 'TEXTAREA') return;
+      e.preventDefault();
+      if (appDialogOnConfirm) appDialogOnConfirm();
+      else closeAppDialog();
+    }
+  });
 
   // ---------- Module database (left list, meest recent bovenaan) ----------
   let dbSearchQuery = '';
+  let renderCacheModuleListSig = '';
+  let renderCacheModuleListActiveId = '';
+  let renderCacheAllModulesSig = '';
+  let renderCacheAllModulesActiveId = '';
+  let renderCacheLegendSig = '';
+  let renderCacheStatsSig = '';
+  let renderCacheRepairSig = '';
+
+  function moduleListDataSignature(mods) {
+    return mods.map(m => [
+      m.id,
+      m.updatedAt || '',
+      m.company || '',
+      m.name || '',
+      m.width || 0,
+      m.height || 0,
+      m.sn || '',
+      (m.repairs || []).length,
+    ].join('~')).join('|') + '::q=' + dbSearchQuery;
+  }
+
+  function activeModuleDataSignature() {
+    const m = activeModule();
+    if (!m) return 'none';
+    return [m.id, m.updatedAt || '', (m.repairs || []).length].join('|');
+  }
+
+  function updateModuleListActiveSelection() {
+    const list = document.getElementById('moduleList');
+    list.querySelectorAll('.module-item').forEach((el) => {
+      el.classList.toggle('active', el.dataset.moduleId === state.activeId);
+    });
+    renderCacheModuleListActiveId = state.activeId || '';
+  }
+
+  function updateAllModulesTableActiveSelection() {
+    const tbody = document.getElementById('allModulesTbody');
+    tbody.querySelectorAll('tr').forEach((tr) => {
+      const activeCell = tr.querySelector('.module-active-cell');
+      if (!activeCell) return;
+      activeCell.innerHTML = tr.dataset.moduleId === state.activeId ? '<span class="badge current">actief</span>' : '';
+    });
+    renderCacheAllModulesActiveId = state.activeId || '';
+  }
+
   document.getElementById('dbSearch').addEventListener('input', (e) => {
     dbSearchQuery = e.target.value.trim().toLowerCase();
-    renderModuleList();
+    renderModuleList(true);
   });
 
-  function renderModuleList() {
+  function renderModuleList(force) {
     const list = document.getElementById('moduleList');
     document.getElementById('dbTabCount').textContent = Object.keys(state.modules).length;
     let mods = Object.values(state.modules).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
     if (mods.length === 0) {
+      renderCacheModuleListSig = 'empty::q=' + dbSearchQuery;
+      renderCacheModuleListActiveId = '';
       list.innerHTML = '<div class="module-empty">Nog geen modules. Voeg er hieronder een toe.</div>';
       return;
     }
     if (dbSearchQuery) {
       mods = mods.filter(m => (m.name || '').toLowerCase().includes(dbSearchQuery));
       if (mods.length === 0) {
+        renderCacheModuleListSig = 'empty-search::q=' + dbSearchQuery;
+        renderCacheModuleListActiveId = '';
         list.innerHTML = `<div class="module-empty">Geen modules gevonden voor "${escapeHtml(dbSearchQuery)}".</div>`;
         return;
       }
     }
+
+    const signature = moduleListDataSignature(mods);
+    if (!force && signature === renderCacheModuleListSig) {
+      if (renderCacheModuleListActiveId !== (state.activeId || '')) updateModuleListActiveSelection();
+      return;
+    }
+
     list.innerHTML = '';
     mods.forEach(m => {
       const div = document.createElement('div');
       div.className = 'module-item' + (m.id === state.activeId ? ' active' : '');
+      div.dataset.moduleId = m.id;
       div.innerHTML = `
         <div>
           <div class="mname">${escapeHtml(m.name)}</div>
           <div class="mmeta">${m.company ? escapeHtml(m.company) + ' · ' : ''}${m.width}×${m.height}px${m.sn ? ' · ' + escapeHtml(m.sn) : ''}</div>
         </div>
         <span class="mcount">${m.repairs.length}</span>
-        <span class="mdel" title="SN scannen/bewerken" data-action="scan-sn">📷</span>
-        <span class="mdel" title="Verwijderen">✕</span>
       `;
       div.addEventListener('click', (e) => {
-        if (e.target.dataset.action === 'scan-sn') { e.stopPropagation(); scanUpdateSn(m.id); return; }
-        if (e.target.classList.contains('mdel')) return;
+        // Voorkom dat ctrl-klik/rechterklik direct de context-flow breekt.
+        if (e.ctrlKey || e.button !== 0) return;
         selectModule(m.id);
       });
-      div.querySelectorAll('.mdel').forEach(el => {
-        if (el.dataset.action !== 'scan-sn') {
-          el.addEventListener('click', (e) => {
-            e.stopPropagation();
-            deleteModule(m.id);
-          });
-        }
+      div.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        selectModule(m.id);
+        openModuleContextMenu(m.id, e.clientX, e.clientY);
       });
       list.appendChild(div);
     });
+    renderCacheModuleListSig = signature;
+    renderCacheModuleListActiveId = state.activeId || '';
   }
 
   function selectModule(id) {
     state.activeId = id;
     selected.clear();
     save();
-    renderAll();
+    updateModuleListActiveSelection();
+    updateAllModulesTableActiveSelection();
+    renderCanvas();
+    renderLegend();
+    renderStats();
+    renderRepairTable();
+    updateToolbar();
   }
 
   function deleteModule(id) {
     const m = state.modules[id];
     if (!m) return;
-    if (!confirm(`Module "${m.name}" en het bijbehorende reparatie-overzicht verwijderen?`)) return;
-    pushHistory();
-    delete state.modules[id];
-    if (state.activeId === id) {
-      const remaining = Object.keys(state.modules);
-      state.activeId = remaining.length ? remaining[0] : null;
-    }
-    selected.clear();
-    save();
-    renderAll();
+    uiConfirm(`Module "${m.name}" en het bijbehorende reparatie-overzicht verwijderen?`, () => {
+      pushHistory();
+      delete state.modules[id];
+      if (state.activeId === id) {
+        const remaining = Object.keys(state.modules);
+        state.activeId = remaining.length ? remaining[0] : null;
+      }
+      selected.clear();
+      save();
+      renderAll();
+    }, { title: 'Module verwijderen', confirmText: 'Verwijderen', danger: true });
   }
 
   // Verhoogt het laatste cijferblok in een serienummer, met behoud van voorloopnullen
@@ -730,23 +2424,35 @@
     const name = document.getElementById('m_name').value.trim();
     const width = Math.max(1, parseInt(document.getElementById('m_width').value, 10) || 192);
     const height = Math.max(1, parseInt(document.getElementById('m_height').value, 10) || 192);
-    const sn = document.getElementById('m_sn').value.trim();
+    const shaderWidth = Math.max(0, parseInt(document.getElementById('m_shader_width').value, 10) || 0);
+    const shaderHeight = Math.max(0, parseInt(document.getElementById('m_shader_height').value, 10) || 0);
+    const snInput = document.getElementById('m_sn');
     const batchOn = document.getElementById('m_batch').checked;
-    if (!name) { alert('Geef de module een naam of label.'); document.getElementById('m_name').focus(); return; }
+    let sn = snInput.value.trim();
+    if (batchOn && !sn) {
+      sn = '1';
+      snInput.value = sn;
+    }
+    if (!name) { uiAlert('Geef een tegel type op voor de module.'); document.getElementById('m_name').focus(); return; }
     pushHistory();
     const id = uid();
-    state.modules[id] = { id, company, name, width, height, sn, updatedAt: nowISO(), repairs: [] };
+    state.modules[id] = { id, company, name, width, height, shaderWidth, shaderHeight, sn, updatedAt: nowISO(), repairs: [] };
     state.activeId = id;
-    document.getElementById('m_name').value = '';
+    library.companies = uniqueSorted([...(library.companies || []), company].filter(Boolean));
+    library.tileTypes = uniqueSorted([...(library.tileTypes || []), name].filter(Boolean));
+    saveLibrary();
+    renderLibraryPresetDropdowns();
     selected.clear();
     save();
     renderAll();
     // Klaarzetten voor de volgende scan/invoer — bij Batch telt het SN alvast door
-    if (batchOn && sn) {
+    if (batchOn) {
       document.getElementById('m_sn').value = incrementSerial(sn);
+      saveFormMemory();
       document.getElementById('m_name').focus();
     } else {
       document.getElementById('m_sn').value = '';
+      saveFormMemory();
       document.getElementById('m_sn').focus();
     }
   }
@@ -761,35 +2467,273 @@
     if (e.key === 'Enter') { e.preventDefault(); document.getElementById('m_sn').focus(); }
   });
 
+  ['m_company', 'm_name', 'm_width', 'm_height', 'm_shader_width', 'm_shader_height', 'm_sn', 'm_batch'].forEach((id) => {
+    const eventName = id === 'm_batch' ? 'change' : 'input';
+    document.getElementById(id).addEventListener(eventName, saveFormMemory);
+  });
+
+  document.getElementById('m_batch').addEventListener('change', (e) => {
+    if (!e.target.checked) return;
+    const snInput = document.getElementById('m_sn');
+    if (!snInput.value.trim()) {
+      snInput.value = '1';
+      saveFormMemory();
+    }
+  });
+
+  document.getElementById('saveModulePresetBtn').addEventListener('click', saveQuickModulePresetFromForm);
+
+  document.getElementById('menuPresetManager').addEventListener('click', () => {
+    openPresetManager();
+    libraryMenuDropdown.classList.remove('show');
+    libraryMenuBtn.classList.remove('open');
+  });
+
+  document.getElementById('presetModuleSaveBtn').addEventListener('click', saveModulePresetFromModal);
+  document.getElementById('presetModuleCancelEditBtn').addEventListener('click', resetModulePresetForm);
+  document.getElementById('presetModuleLabelInput').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    saveModulePresetFromModal();
+  });
+  document.getElementById('presetModuleCompanyInput').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    saveModulePresetFromModal();
+  });
+  document.getElementById('presetModuleTileInput').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    saveModulePresetFromModal();
+  });
+  document.getElementById('presetModalCloseBtn').addEventListener('click', closePresetManager);
+  document.getElementById('presetModalOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'presetModalOverlay') closePresetManager();
+  });
+
+  const quickEditModalOverlay = document.getElementById('quickEditModalOverlay');
+  const quickEditModalTitle = document.getElementById('quickEditModalTitle');
+  const quickEditModalSubtitle = document.getElementById('quickEditModalSubtitle');
+  const quickEditModalLabel = document.getElementById('quickEditModalLabel');
+  const quickEditModalInput = document.getElementById('quickEditModalInput');
+  const quickEditModalError = document.getElementById('quickEditModalError');
+  const quickEditModalConfirmBtn = document.getElementById('quickEditModalConfirmBtn');
+  let quickEditCommit = null;
+
+  function openQuickEditModal(opts) {
+    quickEditCommit = typeof opts.onConfirm === 'function' ? opts.onConfirm : null;
+    quickEditModalTitle.textContent = opts.title || 'Bewerken';
+    quickEditModalSubtitle.textContent = opts.subtitle || '';
+    quickEditModalSubtitle.style.display = opts.subtitle ? 'block' : 'none';
+    quickEditModalLabel.textContent = opts.label || 'Waarde';
+    quickEditModalInput.value = String(opts.value || '');
+    quickEditModalInput.placeholder = opts.placeholder || '';
+    quickEditModalConfirmBtn.textContent = opts.confirmText || 'Opslaan';
+    quickEditModalError.style.display = 'none';
+    quickEditModalError.textContent = '';
+    quickEditModalOverlay.classList.add('show');
+    requestAnimationFrame(() => {
+      quickEditModalInput.focus();
+      quickEditModalInput.select();
+    });
+  }
+
+  function closeQuickEditModal() {
+    quickEditCommit = null;
+    quickEditModalOverlay.classList.remove('show');
+    quickEditModalError.style.display = 'none';
+    quickEditModalError.textContent = '';
+  }
+
+  function showQuickEditError(message) {
+    quickEditModalError.textContent = message;
+    quickEditModalError.style.display = 'block';
+    quickEditModalInput.focus();
+  }
+
+  function confirmQuickEditModal() {
+    if (!quickEditCommit) {
+      closeQuickEditModal();
+      return;
+    }
+    const keepOpen = quickEditCommit(String(quickEditModalInput.value || ''));
+    if (keepOpen) return;
+    closeQuickEditModal();
+  }
+
+  document.getElementById('quickEditModalCancelBtn').addEventListener('click', closeQuickEditModal);
+  document.getElementById('quickEditModalConfirmBtn').addEventListener('click', confirmQuickEditModal);
+  quickEditModalInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); confirmQuickEditModal(); }
+    if (e.key === 'Escape') { e.preventDefault(); closeQuickEditModal(); }
+  });
+  quickEditModalOverlay.addEventListener('click', (e) => {
+    if (e.target.id === 'quickEditModalOverlay') closeQuickEditModal();
+  });
+
   // SN van een bestaande module (opnieuw) scannen/invoeren
   function scanUpdateSn(moduleId) {
     const m = state.modules[moduleId];
     if (!m) return;
-    const val = prompt(`Scan of typ het serienummer voor "${m.name}":`, m.sn || '');
-    if (val === null) return;
-    pushHistory();
-    m.sn = val.trim();
-    touchModule(m);
-    save();
-    renderAll();
+    openQuickEditModal({
+      title: 'Serienummer bewerken',
+      subtitle: m.name,
+      label: 'Scan of typ het serienummer',
+      value: m.sn || '',
+      placeholder: 'bv. SN 000205',
+      confirmText: 'Bijwerken',
+      onConfirm: (value) => {
+        const next = value.trim();
+        if (next === (m.sn || '')) return false;
+        pushHistory();
+        m.sn = next;
+        touchModule(m);
+        save();
+        renderAll();
+        return false;
+      },
+    });
   }
 
+  function renameModule(moduleId) {
+    const m = state.modules[moduleId];
+    if (!m) return;
+    openQuickEditModal({
+      title: 'Module naam bewerken',
+      subtitle: m.company || 'Database module',
+      label: 'Tegel type',
+      value: m.name || '',
+      placeholder: 'Nieuwe module naam',
+      confirmText: 'Naam opslaan',
+      onConfirm: (value) => {
+        const next = value.trim();
+        if (!next) {
+          showQuickEditError('Naam mag niet leeg zijn.');
+          return true;
+        }
+        if (next === m.name) return false;
+        pushHistory();
+        m.name = next;
+        touchModule(m);
+        library.tileTypes = uniqueSorted([...(library.tileTypes || []), next].filter(Boolean));
+        saveLibrary();
+        save();
+        renderAll();
+        return false;
+      },
+    });
+  }
+
+  function renameModuleName(moduleId) {
+    const m = state.modules[moduleId];
+    if (!m) return;
+    openQuickEditModal({
+      title: 'Module naam bewerken',
+      subtitle: m.name || 'Database module',
+      label: 'Naam',
+      value: m.company || '',
+      placeholder: 'Naam of bedrijf',
+      confirmText: 'Naam opslaan',
+      onConfirm: (value) => {
+        const next = value.trim();
+        if (next === (m.company || '')) return false;
+        pushHistory();
+        m.company = next;
+        touchModule(m);
+        library.companies = uniqueSorted([...(library.companies || []), next].filter(Boolean));
+        saveLibrary();
+        save();
+        renderAll();
+        return false;
+      },
+    });
+  }
+
+  const moduleContextMenu = document.getElementById('moduleContextMenu');
+  let contextMenuModuleId = null;
+
+  function closeModuleContextMenu() {
+    contextMenuModuleId = null;
+    moduleContextMenu.classList.remove('show');
+  }
+
+  function openModuleContextMenu(moduleId, x, y) {
+    contextMenuModuleId = moduleId;
+    moduleContextMenu.classList.add('show');
+    const pad = 10;
+    const rect = moduleContextMenu.getBoundingClientRect();
+    const menuWidth = rect.width || 190;
+    const menuHeight = rect.height || 176;
+    const left = Math.max(pad, Math.min(x, window.innerWidth - menuWidth - pad));
+    const top = Math.max(pad, Math.min(y, window.innerHeight - menuHeight - pad));
+    moduleContextMenu.style.left = `${left}px`;
+    moduleContextMenu.style.top = `${top}px`;
+  }
+
+  moduleContextMenu.addEventListener('pointerdown', (e) => {
+    const button = e.target.closest('button[data-action]');
+    if (!button || !contextMenuModuleId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const id = contextMenuModuleId;
+    const action = button.dataset.action;
+    closeModuleContextMenu();
+    if (action === 'name') renameModuleName(id);
+    else if (action === 'type') renameModule(id);
+    else if (action === 'serial') scanUpdateSn(id);
+    else if (action === 'delete') deleteModule(id);
+  });
+  document.addEventListener('click', (e) => {
+    if (!moduleContextMenu.classList.contains('show')) return;
+    if (moduleContextMenu.contains(e.target)) return;
+    closeModuleContextMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeModuleContextMenu();
+  });
+  window.addEventListener('scroll', closeModuleContextMenu, true);
+  window.addEventListener('resize', closeModuleContextMenu);
+
   // ---------- All-modules database (bottom, full width) ----------
-  function renderAllModulesTable() {
+  function renderAllModulesTable(force) {
     const tbody = document.getElementById('allModulesTbody');
     const empty = document.getElementById('allModulesEmpty');
     const mods = Object.values(state.modules).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
-    tbody.innerHTML = '';
     if (mods.length === 0) {
+      renderCacheAllModulesSig = 'empty';
+      renderCacheAllModulesActiveId = '';
+      tbody.innerHTML = '';
       empty.style.display = 'block';
       return;
     }
+    const signature = mods.map((m) => {
+      const openPx = (m.repairs || []).filter(r => r.status === 'Open').reduce((s, r) => s + r.pixels.length, 0);
+      return [
+        m.id,
+        m.updatedAt || '',
+        m.company || '',
+        m.name || '',
+        m.width || 0,
+        m.height || 0,
+        m.sn || '',
+        (m.repairs || []).length,
+        openPx,
+      ].join('~');
+    }).join('|');
+    if (!force && signature === renderCacheAllModulesSig) {
+      if (renderCacheAllModulesActiveId !== (state.activeId || '')) updateAllModulesTableActiveSelection();
+      empty.style.display = 'none';
+      return;
+    }
+
+    tbody.innerHTML = '';
     empty.style.display = 'none';
     mods.forEach(m => {
       const openPx = m.repairs.filter(r => r.status === 'Open').reduce((s, r) => s + r.pixels.length, 0);
       const tr = document.createElement('tr');
+      tr.dataset.moduleId = m.id;
       tr.innerHTML = `
-        <td>${m.id === state.activeId ? '<span class="badge current">actief</span>' : ''}</td>
+        <td class="module-active-cell">${m.id === state.activeId ? '<span class="badge current">actief</span>' : ''}</td>
         <td>${escapeHtml(m.company || '—')}</td>
         <td>${escapeHtml(m.name)}</td>
         <td>${m.width} × ${m.height} px</td>
@@ -798,28 +2742,22 @@
         <td>${openPx}</td>
         <td>${(m.updatedAt || '').slice(0, 10)}</td>
       `;
-      const actionTd = document.createElement('td');
-      actionTd.className = 'row-actions';
-      const openBtn = document.createElement('button');
-      openBtn.className = 'small';
-      openBtn.textContent = 'Openen';
-      openBtn.addEventListener('click', (e) => { e.stopPropagation(); selectModule(m.id); window.scrollTo({top:0, behavior:'smooth'}); });
-      const scanBtn = document.createElement('button');
-      scanBtn.className = 'small';
-      scanBtn.textContent = '📷 SN';
-      scanBtn.title = 'SN scannen/bewerken';
-      scanBtn.addEventListener('click', (e) => { e.stopPropagation(); scanUpdateSn(m.id); });
-      const delBtn = document.createElement('button');
-      delBtn.className = 'small danger';
-      delBtn.textContent = 'Verwijderen';
-      delBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteModule(m.id); });
-      actionTd.appendChild(openBtn);
-      actionTd.appendChild(scanBtn);
-      actionTd.appendChild(delBtn);
-      tr.appendChild(actionTd);
-      tr.addEventListener('click', () => { selectModule(m.id); window.scrollTo({top:0, behavior:'smooth'}); });
+      tr.addEventListener('click', (e) => {
+        // Alleen normale linkermuisklik activeert row-select + scroll.
+        if (e.ctrlKey || e.button !== 0) return;
+        selectModule(m.id);
+        window.scrollTo({top:0, behavior:'smooth'});
+      });
+      tr.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        selectModule(m.id);
+        openModuleContextMenu(m.id, e.clientX, e.clientY);
+      });
       tbody.appendChild(tr);
     });
+    renderCacheAllModulesSig = signature;
+    renderCacheAllModulesActiveId = state.activeId || '';
   }
 
   // ---------- Canvas (middle) ----------
@@ -865,7 +2803,7 @@
     const m = activeModule();
     const noModuleMsg = document.getElementById('noModuleMsg');
     document.getElementById('moduleTitle').textContent = m ? m.name : 'Geen module geselecteerd';
-    document.getElementById('moduleSub').textContent = m ? `${m.company ? m.company + ' · ' : ''}${m.width} × ${m.height} px${m.sn ? ' · ' + m.sn : ''}` : '';
+    document.getElementById('moduleSub').textContent = m ? `${m.company ? m.company + ' · ' : ''}${m.width} × ${m.height} px${m.shaderWidth > 0 && m.shaderHeight > 0 ? ' · Shader ' + m.shaderWidth + 'x' + m.shaderHeight : ''}${m.sn ? ' · ' + m.sn : ''}` : '';
 
     if (!m) {
       canvasGridWrap.style.display = 'none';
@@ -942,6 +2880,25 @@
         ctx.moveTo(0, y * cellSize);
         ctx.lineTo(cssW, y * cellSize);
         ctx.stroke();
+      }
+
+      // Shader segmenten als gele overlay op basis van shader-afmeting.
+      const shaderW = Math.max(0, parseInt(m.shaderWidth, 10) || 0);
+      const shaderH = Math.max(0, parseInt(m.shaderHeight, 10) || 0);
+      if (shaderW > 0 && shaderH > 0) {
+        ctx.strokeStyle = dark ? 'rgba(250, 204, 21, 0.9)' : 'rgba(202, 138, 4, 0.95)';
+        ctx.lineWidth = Math.max(1, Math.round(cellSize / 12));
+        for (let y = 0; y < m.height; y += shaderH) {
+          const segH = Math.min(shaderH, m.height - y);
+          for (let x = 0; x < m.width; x += shaderW) {
+            const segW = Math.min(shaderW, m.width - x);
+            const px = x * cellSize;
+            const py = y * cellSize;
+            const w = segW * cellSize;
+            const h = segH * cellSize;
+            ctx.strokeRect(px + 0.5, py + 0.5, Math.max(1, w - 1), Math.max(1, h - 1));
+          }
+        }
       }
     }
 
@@ -1204,10 +3161,13 @@
   }
 
   // ---------- Legend ----------
-  function renderLegend() {
+  function renderLegend(force) {
     const m = activeModule();
     const row = document.getElementById('legendRow');
+    const signature = activeModuleDataSignature();
+    if (!force && signature === renderCacheLegendSig) return;
     if (!m || m.repairs.length === 0) {
+      renderCacheLegendSig = signature;
       row.innerHTML = '<span class="legend-empty">Nog geen reparaties gelogd.</span>';
       return;
     }
@@ -1220,13 +3180,16 @@
       chip.innerHTML = `<span class="dot" style="background:${color}"></span>${escapeHtml(type)}`;
       row.appendChild(chip);
     });
+    renderCacheLegendSig = signature;
   }
 
   // ---------- Stats ----------
-  function renderStats() {
+  function renderStats(force) {
     const m = activeModule();
     const row = document.getElementById('statsRow');
-    if (!m) { row.innerHTML = ''; return; }
+    const signature = activeModuleDataSignature();
+    if (!force && signature === renderCacheStatsSig) return;
+    if (!m) { row.innerHTML = ''; renderCacheStatsSig = signature; return; }
     const totalPx = m.repairs.reduce((s, r) => s + r.pixels.length, 0);
     const open = m.repairs.filter(r => r.status === 'Open').reduce((s, r) => s + r.pixels.length, 0);
     row.innerHTML = `
@@ -1234,16 +3197,20 @@
       <div class="stat"><div class="num" style="color:#c0142c">${open}</div><div class="label">Open px</div></div>
       <div class="stat"><div class="num">${totalPx}</div><div class="label">Totaal px</div></div>
     `;
+    renderCacheStatsSig = signature;
   }
 
   // ---------- Repairs list (right) ----------
-  function renderRepairTable() {
+  function renderRepairTable(force) {
     const m = activeModule();
     const tbody = document.getElementById('repairTbody');
-    tbody.innerHTML = '';
     const empty = document.getElementById('repairEmpty');
+    const signature = activeModuleDataSignature();
+    if (!force && signature === renderCacheRepairSig) return;
+    tbody.innerHTML = '';
     if (!m || m.repairs.length === 0) {
       empty.style.display = 'block';
+      renderCacheRepairSig = signature;
       return;
     }
     empty.style.display = 'none';
@@ -1270,6 +3237,7 @@
         tr.addEventListener('mouseleave', () => highlightPixels(r, false));
         tbody.appendChild(tr);
       });
+      renderCacheRepairSig = signature;
   }
 
   function highlightPixels(rep, on) {
@@ -1343,7 +3311,7 @@
     const m = activeModule();
     if (!m) return;
     const pixels = Array.from(selected).map(k => k.split(',').map(Number));
-    if (pixels.length === 0) { alert('Selecteer minstens één pixel op het canvas.'); return; }
+    if (pixels.length === 0) { uiAlert('Selecteer minstens één pixel op het canvas.'); return; }
 
     const data = {
       type: document.getElementById('r_type').value,
@@ -1371,7 +3339,7 @@
     repairModalOverlay.classList.remove('show');
     renderAll();
   });
-  // ---------- Sneltoetsen: Ctrl/Cmd+A = Pixel (roze, opgelost), Ctrl/Cmd+B = Pad (blauw, opgelost) ----------
+  // ---------- Sneltoetsen voor veelgebruikte reparaties ----------
   function quickAddRepair(type, color) {
     const m = activeModule();
     if (!m || selected.size === 0) return;
@@ -1389,15 +3357,16 @@
   document.addEventListener('keydown', (e) => {
     if (!(e.ctrlKey || e.metaKey)) return;
     const key = e.key.toLowerCase();
-    if (key !== 'a' && key !== 'b') return;
+    if (key !== '1' && key !== '2' && key !== '3') return;
     const tag = (document.activeElement && document.activeElement.tagName) || '';
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
     if (repairModalOverlay.classList.contains('show')) return;
     const m = activeModule();
     if (!m || selected.size === 0) return;
     e.preventDefault();
-    if (key === 'a') quickAddRepair('Pixel', '#e6007e');
-    else quickAddRepair('Pad', '#2563eb');
+    if (key === '1') quickAddRepair('Nieuwe Pixel gezet', '#e6007e');
+    else if (key === '2') quickAddRepair('Pad Paper Gebruikt', '#2563eb');
+    else quickAddRepair('Trace gemaakt', '#f59e0b');
   });
 
   // ---------- Esc = selectie van pixels opheffen (of open modal sluiten) ----------
@@ -1417,40 +3386,103 @@
 
   document.getElementById('repairModalDelete').addEventListener('click', () => {
     if (!editingRepairId) return;
-    if (!confirm('Deze reparatie verwijderen?')) return;
-    const m = activeModule();
-    pushHistory();
-    m.repairs = m.repairs.filter(r => r.id !== editingRepairId);
-    touchModule(m);
-    editingRepairId = null;
-    selected.clear();
-    save();
-    repairModalOverlay.classList.remove('show');
-    renderAll();
+    uiConfirm('Deze reparatie verwijderen?', () => {
+      const m = activeModule();
+      pushHistory();
+      m.repairs = m.repairs.filter(r => r.id !== editingRepairId);
+      touchModule(m);
+      editingRepairId = null;
+      selected.clear();
+      save();
+      repairModalOverlay.classList.remove('show');
+      renderAll();
+    }, { title: 'Reparatie verwijderen', confirmText: 'Verwijderen', danger: true });
   });
 
   // ---------- Bestand-menu (helemaal boven in) ----------
   const fileMenuBtn = document.getElementById('fileMenuBtn');
   const fileMenuDropdown = document.getElementById('fileMenuDropdown');
+  const libraryMenuBtn = document.getElementById('libraryMenuBtn');
+  const libraryMenuDropdown = document.getElementById('libraryMenuDropdown');
   fileMenuBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     fileMenuDropdown.classList.toggle('show');
     fileMenuBtn.classList.toggle('open');
+    libraryMenuDropdown.classList.remove('show');
+    libraryMenuBtn.classList.remove('open');
+  });
+  libraryMenuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    libraryMenuDropdown.classList.toggle('show');
+    libraryMenuBtn.classList.toggle('open');
+    fileMenuDropdown.classList.remove('show');
+    fileMenuBtn.classList.remove('open');
   });
   document.addEventListener('click', () => {
     fileMenuDropdown.classList.remove('show');
     fileMenuBtn.classList.remove('open');
+    libraryMenuDropdown.classList.remove('show');
+    libraryMenuBtn.classList.remove('open');
   });
   fileMenuDropdown.addEventListener('click', (e) => e.stopPropagation());
+  libraryMenuDropdown.addEventListener('click', (e) => e.stopPropagation());
 
   document.getElementById('menuSaveJson').addEventListener('click', () => {
-    const json = JSON.stringify(state, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `pixeltracker-database_${todayISO()}.json`;
-    a.click();
+    if (!currentSaveName) openSaveAsModal();
+    else exportDatabaseJson(currentSaveName);
     fileMenuDropdown.classList.remove('show');
+  });
+
+  const saveAsModalOverlay = document.getElementById('saveAsModalOverlay');
+  const saveAsNameInput = document.getElementById('saveAsNameInput');
+  function suggestedSaveName() {
+    if (currentSaveName) return currentSaveName;
+    const active = activeModule();
+    return active ? active.name : 'database';
+  }
+  function openSaveAsModal() {
+    saveAsNameInput.value = suggestedSaveName();
+    saveAsModalOverlay.classList.add('show');
+    saveAsNameInput.focus();
+    saveAsNameInput.select();
+  }
+  function closeSaveAsModal() {
+    saveAsModalOverlay.classList.remove('show');
+  }
+  function commitSaveAs() {
+    const name = saveAsNameInput.value.trim() || suggestedSaveName();
+    exportDatabaseJson(name);
+    closeSaveAsModal();
+    if (pendingCloseAfterSaveAs) {
+      pendingCloseAfterSaveAs = false;
+      window.__pixelTrackerCloseDecision = 'save_close';
+    }
+  }
+  document.getElementById('menuSaveAsJson').addEventListener('click', () => {
+    fileMenuDropdown.classList.remove('show');
+    openSaveAsModal();
+  });
+  document.getElementById('saveAsCancelBtn').addEventListener('click', () => {
+    closeSaveAsModal();
+    if (pendingCloseAfterSaveAs) {
+      pendingCloseAfterSaveAs = false;
+      showUnsavedExitModal();
+    }
+  });
+  document.getElementById('saveAsConfirmBtn').addEventListener('click', commitSaveAs);
+  saveAsNameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commitSaveAs();
+    }
+  });
+  saveAsModalOverlay.addEventListener('click', (e) => {
+    if (e.target.id !== 'saveAsModalOverlay') return;
+    closeSaveAsModal();
+    if (pendingCloseAfterSaveAs) {
+      pendingCloseAfterSaveAs = false;
+      showUnsavedExitModal();
+    }
   });
 
   const jsonFileInput = document.getElementById('jsonFileInput');
@@ -1466,18 +3498,26 @@
       try {
         const parsed = JSON.parse(reader.result);
         if (!parsed || typeof parsed.modules !== 'object') throw new Error('ongeldig bestand');
-        if (!confirm('Huidige database vervangen door de inhoud van dit bestand?')) return;
-        pushHistory();
-        state = parsed;
-        const ids = Object.keys(state.modules);
-        if (!state.activeId || !state.modules[state.activeId]) {
-          state.activeId = ids.length ? ids[0] : null;
-        }
-        selected.clear();
-        save();
-        renderAll();
+        uiConfirm('Huidige database vervangen door de inhoud van dit bestand?', () => {
+          pushHistory();
+          state = parsed;
+          const loadedName = String((file && file.name) || '').replace(/\.json$/i, '').trim();
+          if (loadedName) {
+            setCurrentSaveName(loadedName);
+            setAutoSaveEnabled(true);
+          }
+          if (loadedName) upsertRecentFileSnapshot(loadedName, JSON.stringify(parsed), nowISO());
+          const ids = Object.keys(state.modules);
+          if (!state.activeId || !state.modules[state.activeId]) {
+            state.activeId = ids.length ? ids[0] : null;
+          }
+          selected.clear();
+          save(true);
+          markManualSaveSnapshot();
+          renderAll();
+        }, { title: 'Database laden', confirmText: 'Vervangen', danger: true });
       } catch (err) {
-        alert('Kon het bestand niet lezen. Is het een geldig database-JSON-bestand?');
+        uiAlert('Kon het bestand niet lezen. Is het een geldig database-JSON-bestand?');
       }
     };
     reader.readAsText(file);
@@ -1485,19 +3525,201 @@
   });
 
   document.getElementById('menuNewDb').addEventListener('click', () => {
-    if (!confirm('Alle modules en reparaties verwijderen en met een lege database starten? Sla eerst op via "Database opslaan" als je dit wilt bewaren.')) return;
-    pushHistory();
-    state = { activeId: null, modules: {} };
-    selected.clear();
-    save();
-    renderAll();
-    fileMenuDropdown.classList.remove('show');
+    uiConfirm('Alle modules en reparaties verwijderen en met een lege database starten? Sla eerst op via "Database opslaan" als je dit wilt bewaren.', () => {
+      pushHistory();
+      state = { activeId: null, modules: {} };
+      selected.clear();
+      setCurrentSaveName('');        // reset bestandsnaam → rood bolletje + "nog niet opgeslagen"
+      localStorage.removeItem(MANUAL_SAVE_SNAPSHOT_KEY);
+      save(true);
+      renderAll();
+      fileMenuDropdown.classList.remove('show');
+    }, { title: 'Nieuwe database', confirmText: 'Leegmaken', danger: true });
+  });
+
+  const recentFilesModalOverlay = document.getElementById('recentFilesModalOverlay');
+  const recentFilesList = document.getElementById('recentFilesList');
+  const recentMenuWrap = document.getElementById('recentMenuWrap');
+  const recentFilesSubmenu = document.getElementById('recentFilesSubmenu');
+
+  function openRecentFileItem(item, onComplete) {
+    try {
+      const parsed = JSON.parse(item.snapshot);
+      if (!parsed || typeof parsed.modules !== 'object') throw new Error('ongeldig');
+      uiConfirm('Huidige database vervangen door "' + item.label + '"?', () => {
+        pushHistory();
+        state = parsed;
+        setCurrentSaveName(item.label || currentSaveName);
+        setAutoSaveEnabled(true);
+        upsertRecentFileSnapshot(item.label || currentSaveName, item.snapshot, item.savedAt || nowISO());
+        const ids = Object.keys(state.modules);
+        if (!state.activeId || !state.modules[state.activeId]) state.activeId = ids.length ? ids[0] : null;
+        selected.clear();
+        save(true);
+        markManualSaveSnapshot();
+        if (typeof onComplete === 'function') onComplete();
+        renderAll();
+      }, { title: 'Recente file openen', confirmText: 'Vervangen', danger: true });
+    } catch (e) {
+      uiAlert('Kon deze recente file niet openen.');
+    }
+  }
+
+  function renderRecentFilesSubmenu() {
+    if (!recentFilesSubmenu) return;
+    const list = loadRecentFiles();
+    if (!list.length) {
+      recentFilesSubmenu.innerHTML = '<div class="preset-empty">Nog geen recente files.</div>';
+      return;
+    }
+    recentFilesSubmenu.innerHTML = '';
+    list.forEach(item => {
+      const btn = document.createElement('button');
+      btn.className = 'recent-file-item';
+      btn.type = 'button';
+      btn.innerHTML = '<div class="recent-file-item-name">' + escapeHtml(item.label) + '</div>' +
+        '<div class="recent-file-item-meta">' + escapeHtml(formatLocalDateTime(item.savedAt || '')) + '</div>';
+      btn.addEventListener('click', () => {
+        closeRecentMenu();
+        openRecentFileItem(item);
+      });
+      recentFilesSubmenu.appendChild(btn);
+    });
+  }
+
+  function openRecentMenu() {
+    if (!recentMenuWrap) return;
+    renderRecentFilesSubmenu();
+    recentMenuWrap.classList.add('show');
+  }
+
+  function closeRecentMenu() {
+    if (!recentMenuWrap) return;
+    recentMenuWrap.classList.remove('show');
+  }
+
+  let recentMenuCloseTimer = null;
+  function scheduleCloseRecentMenu() {
+    if (recentMenuCloseTimer) clearTimeout(recentMenuCloseTimer);
+    recentMenuCloseTimer = setTimeout(() => {
+      recentMenuCloseTimer = null;
+      closeRecentMenu();
+    }, 140);
+  }
+
+  if (recentMenuWrap) {
+    recentMenuWrap.addEventListener('mouseenter', () => {
+      if (recentMenuCloseTimer) {
+        clearTimeout(recentMenuCloseTimer);
+        recentMenuCloseTimer = null;
+      }
+      openRecentMenu();
+    });
+    recentMenuWrap.addEventListener('mouseleave', scheduleCloseRecentMenu);
+  }
+  document.getElementById('menuOpenRecent').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (recentMenuWrap && recentMenuWrap.classList.contains('show')) closeRecentMenu();
+    else openRecentMenu();
+  });
+  if (recentFilesSubmenu) {
+    recentFilesSubmenu.addEventListener('mouseenter', () => {
+      if (recentMenuCloseTimer) {
+        clearTimeout(recentMenuCloseTimer);
+        recentMenuCloseTimer = null;
+      }
+    });
+    recentFilesSubmenu.addEventListener('mouseleave', scheduleCloseRecentMenu);
+  }
+  function renderRecentFiles() {
+    const list = loadRecentFiles();
+    if (!list.length) {
+      recentFilesList.innerHTML = '<div class="preset-empty">Nog geen recente files.</div>';
+      return;
+    }
+    recentFilesList.innerHTML = '';
+    list.forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'preset-row';
+      const left = document.createElement('div');
+      left.style.flex = '1';
+      left.innerHTML = '<div class="preset-row-name">' + escapeHtml(item.label) + '</div>' +
+        '<div class="preset-meta">' + escapeHtml(formatLocalDateTime(item.savedAt || '')) + '</div>';
+      const actions = document.createElement('div');
+      actions.className = 'preset-row-actions';
+      const openBtn = document.createElement('button');
+      openBtn.className = 'small';
+      openBtn.textContent = 'Open';
+      openBtn.addEventListener('click', () => {
+        openRecentFileItem(item, () => recentFilesModalOverlay.classList.remove('show'));
+      });
+      actions.appendChild(openBtn);
+      row.appendChild(left);
+      row.appendChild(actions);
+      recentFilesList.appendChild(row);
+    });
+  }
+  document.getElementById('recentFilesCloseBtn').addEventListener('click', () => recentFilesModalOverlay.classList.remove('show'));
+  recentFilesModalOverlay.addEventListener('click', (e) => {
+    if (e.target.id === 'recentFilesModalOverlay') recentFilesModalOverlay.classList.remove('show');
+  });
+
+  const unsavedExitModalOverlay = document.getElementById('unsavedExitModalOverlay');
+  function showUnsavedExitModal() {
+    unsavedExitModalOverlay.classList.add('show');
+  }
+  function hideUnsavedExitModal() {
+    unsavedExitModalOverlay.classList.remove('show');
+  }
+
+  // Host bridge: desktop wrapper asks this before closing.
+  window.__pixelTrackerCloseDecision = 'idle';
+  window.__pixelTrackerRequestClose = function() {
+    flushSessionAndLibrarySnapshot();
+    flushAutosaveRecentSnapshot();
+    if (isAutosaveActive()) return 'close_clean';
+    if (!hasUnsavedManualSave()) return 'close_clean';
+    window.__pixelTrackerCloseDecision = 'pending';
+    showUnsavedExitModal();
+    return 'pending';
+  };
+
+  document.getElementById('unsavedExitSaveBtn').addEventListener('click', () => {
+    pendingCloseAfterSaveAs = true;
+    hideUnsavedExitModal();
+    openSaveAsModal();
+  });
+  document.getElementById('unsavedExitDiscardBtn').addEventListener('click', () => {
+    window.__pixelTrackerCloseDecision = 'discard_close';
+    hideUnsavedExitModal();
+  });
+  document.getElementById('unsavedExitCancelBtn').addEventListener('click', () => {
+    window.__pixelTrackerCloseDecision = 'cancel';
+    hideUnsavedExitModal();
+  });
+
+  // Fallback for non-desktop contexts: native unload warning.
+  window.addEventListener('beforeunload', (e) => {
+    flushSessionAndLibrarySnapshot();
+    flushAutosaveRecentSnapshot();
+    if (isAutosaveActive()) return;
+    if (!hasUnsavedManualSave()) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
+
+  // Extra save moments voor desktop-app lifecycle (afsluiten, background, tab freeze)
+  window.addEventListener('pagehide', () => {
+    flushSessionAndLibrarySnapshot();
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushSessionAndLibrarySnapshot();
   });
 
   // ---------- CSV export ----------
   document.getElementById('menuExportCsv').addEventListener('click', () => {
     const m = activeModule();
-    if (!m) { alert('Selecteer eerst een module.'); return; }
+    if (!m) { uiAlert('Selecteer eerst een module.'); return; }
     const rows = [['Wat', 'Wanneer', 'Wie', 'Status', 'Kleur', 'Pixels', 'Notitie']];
     m.repairs.forEach(r => {
       rows.push([
@@ -1510,172 +3732,655 @@
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `reparaties_${m.name}.csv`.replace(/\s+/g, '_');
+    a.download = `reparaties_${slugify(m.name)}_${timestampCompact()}.csv`;
     a.click();
     fileMenuDropdown.classList.remove('show');
   });
 
-  document.getElementById('menuPrint').addEventListener('click', () => {
-    fileMenuDropdown.classList.remove('show');
-    window.print();
-  });
+  // ---------- A3-export (modern rapport) ----------
+  function buildSampleReportData() {
+    return {
+      demoMode: true,
+      company: '',
+      name: 'Testmodule A3 voorbeeld',
+      sn: 'SN-DEMO-001',
+      width: 192,
+      height: 192,
+      shaderWidth: 32,
+      shaderHeight: 32,
+      repairs: [
+        {
+          type: 'Pixel',
+          date: todayISO(),
+          initials: 'KV',
+          status: 'Open',
+          color: '#d41876',
+          note: 'Linksboven sector - controle nodig',
+          pixels: [
+            [1, 1], [2, 1], [3, 1], [4, 1], [5, 1], [6, 1], [7, 1], [8, 1],
+            [1, 2], [2, 2], [3, 2], [4, 2], [5, 2], [6, 2]
+          ]
+        },
+        {
+          type: 'Pad',
+          date: todayISO(),
+          initials: 'MV',
+          status: 'Opgelost',
+          color: '#1e5a96',
+          note: 'Blauwe pad gesoldeert - OK',
+          pixels: [
+            [9, 4], [10, 4], [11, 4], [12, 4], [13, 4], [14, 4], [15, 4], [16, 4],
+            [9, 5], [10, 5], [11, 5], [12, 5], [13, 5], [14, 5], [15, 5], [16, 5],
+            [9, 6], [10, 6], [11, 6], [12, 6], [13, 6], [14, 6], [15, 6], [16, 6],
+            [9, 7], [10, 7], [11, 7], [12, 7]
+          ]
+        },
+        {
+          type: 'Pixel',
+          date: todayISO(),
+          initials: 'JB',
+          status: 'Opgelost',
+          color: '#d41876',
+          note: 'Vervanging - werkt perfect',
+          pixels: [[18, 2], [18, 3], [19, 2]]
+        },
+        {
+          type: 'Pixel',
+          date: todayISO(),
+          initials: 'RB',
+          status: 'Open',
+          color: '#d41876',
+          note: 'Tweede shader segment - test export',
+          pixels: [[34, 2], [35, 2], [36, 3], [40, 6]]
+        }
+      ]
+    };
+  }
 
-  // ---------- A3-export (grid links, reparaties rechts) ----------
   function buildPrintGridDataURL(m, dark) {
-    const cell = 14;
-    const ruler = 34;
-    const w = m.width * cell + ruler;
-    const h = m.height * cell + ruler;
+    const cell = 10;
+    const colorMap = new Map();
+    const resolvedSet = new Set();
+    m.repairs.forEach(rep => {
+      rep.pixels.forEach(([x, y]) => {
+        const key = pxKey(x, y);
+        colorMap.set(key, rep.color);
+        if (rep.status === 'Opgelost') resolvedSet.add(key);
+      });
+    });
+
+    const w = Math.max(1, m.width * cell);
+    const h = Math.max(1, m.height * cell);
     const off = document.createElement('canvas');
     off.width = w;
     off.height = h;
     const c = off.getContext('2d');
 
-    const pageBg = dark ? '#17171a' : '#ffffff';
-    const emptyColor = dark ? '#303035' : '#f2f2f4';
-    const gridColor = dark ? '#3c3c42' : '#cfcfd4';
-    const borderColor = dark ? '#5a5a62' : '#888888';
-    const textColor = dark ? '#a3a3ab' : '#555555';
+    const pageBg = dark ? '#202027' : '#ffffff';
+    const gridColor = dark ? '#3b3b46' : '#cfd3dd';
+    const borderColor = dark ? '#585864' : '#80848f';
+    const pixelStroke = dark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.16)';
 
     c.fillStyle = pageBg;
     c.fillRect(0, 0, w, h);
 
-    const colorMap = new Map();
-    const resolvedSet = new Set();
-    m.repairs.forEach(rep => {
-      rep.pixels.forEach(([x, y]) => {
-        colorMap.set(pxKey(x, y), rep.color);
-        if (rep.status === 'Opgelost') resolvedSet.add(pxKey(x, y));
-      });
-    });
-
-    for (let y = 0; y < m.height; y++) {
-      for (let x = 0; x < m.width; x++) {
-        const key = pxKey(x, y);
-        const color = colorMap.get(key);
-        c.fillStyle = color || emptyColor;
-        c.globalAlpha = (color && resolvedSet.has(key)) ? 0.55 : 1;
-        c.fillRect(ruler + x * cell, ruler + y * cell, cell - 0.5, cell - 0.5);
-        c.globalAlpha = 1;
-      }
-    }
-
     c.strokeStyle = gridColor;
-    c.lineWidth = 1;
-    for (let x = 0; x <= m.width; x += 10) {
+    c.lineWidth = 0.9;
+    for (let x = 0; x <= m.width; x++) {
       c.beginPath();
-      c.moveTo(ruler + x * cell, ruler);
-      c.lineTo(ruler + x * cell, ruler + m.height * cell);
+      c.moveTo(x * cell, 0);
+      c.lineTo(x * cell, h);
       c.stroke();
     }
-    for (let y = 0; y <= m.height; y += 10) {
+    for (let y = 0; y <= m.height; y++) {
       c.beginPath();
-      c.moveTo(ruler, ruler + y * cell);
-      c.lineTo(ruler + m.width * cell, ruler + y * cell);
+      c.moveTo(0, y * cell);
+      c.lineTo(w, y * cell);
       c.stroke();
     }
     c.strokeStyle = borderColor;
-    c.strokeRect(ruler, ruler, m.width * cell, m.height * cell);
+    c.strokeRect(0.5, 0.5, w - 1, h - 1);
 
-    c.fillStyle = textColor;
-    c.font = '13px -apple-system, sans-serif';
-    c.textAlign = 'center';
-    c.textBaseline = 'middle';
-    for (let x = 0; x < m.width; x += 10) c.fillText(String(x + 1), ruler + x * cell + cell / 2, ruler / 2);
-    c.textAlign = 'right';
-    for (let y = 0; y < m.height; y += 10) c.fillText(String(y + 1), ruler - 6, ruler + y * cell + cell / 2);
+    c.strokeStyle = pixelStroke;
+    c.lineWidth = 0.8;
+    colorMap.forEach((color, key) => {
+      const parts = key.split(',');
+      const x = parseInt(parts[0], 10);
+      const y = parseInt(parts[1], 10);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      if (x < 0 || x >= m.width || y < 0 || y >= m.height) return;
+      c.fillStyle = color;
+      c.globalAlpha = resolvedSet.has(key) ? 0.55 : 1;
+      c.fillRect(x * cell, y * cell, cell - 0.5, cell - 0.5);
+      c.globalAlpha = 1;
+      c.strokeRect(x * cell + 0.4, y * cell + 0.4, cell - 1.3, cell - 1.3);
+    });
 
     return off.toDataURL('image/png');
   }
 
-  function buildPrintPage(m, dark) {
-    const page = document.createElement('div');
-    page.className = 'print-page';
-
-    const left = document.createElement('div');
-    left.className = 'print-left';
-    const img = document.createElement('img');
-    img.src = buildPrintGridDataURL(m, dark);
-    left.appendChild(img);
-
-    const totalPx = m.repairs.reduce((s, r) => s + r.pixels.length, 0);
-    const openPx = m.repairs.filter(r => r.status === 'Open').reduce((s, r) => s + r.pixels.length, 0);
-    const rows = m.repairs
+  function buildReportRows(m) {
+    return (m.repairs || [])
+      .filter(r => Array.isArray(r.pixels) && r.pixels.length > 0)
       .slice()
       .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
-      .map(r => `
-        <tr>
-          <td><span class="print-swatch" style="background:${r.color}"></span></td>
-          <td>${escapeHtml(r.type)}</td>
-          <td>${r.date || ''}</td>
-          <td>${escapeHtml(r.initials || '')}</td>
-          <td>${r.status}</td>
-        </tr>
-      `).join('') || '<tr><td colspan="5" style="color:#999;">Nog geen reparaties</td></tr>';
+      .map(r => ({
+        type: r.type || 'Onbekend',
+        count: r.pixels.length,
+        pixels: r.pixels,
+        date: r.date || '',
+        who: r.initials || '',
+        note: r.note || '',
+        color: r.color || '#e6007e',
+        status: r.status || 'Open'
+      }));
+  }
 
-    const right = document.createElement('div');
-    right.className = 'print-right';
-    right.innerHTML = `
-      <div>
-        <h1>${escapeHtml(m.name)}</h1>
-        <div class="print-meta">${m.company ? escapeHtml(m.company) + ' · ' : ''}${m.width} × ${m.height} px${m.sn ? ' · ' + escapeHtml(m.sn) : ''} · ${totalPx} reparatie-pixels (${openPx} open) · geëxporteerd ${todayISO()}</div>
+  function buildSegmentGroups(m) {
+    const parsedShaderW = parseInt(m.shaderWidth, 10);
+    const parsedShaderH = parseInt(m.shaderHeight, 10);
+    const hasShaderW = Number.isFinite(parsedShaderW) && parsedShaderW > 0;
+    const hasShaderH = Number.isFinite(parsedShaderH) && parsedShaderH > 0;
+    const shaderW = hasShaderW ? parsedShaderW : 32;
+    const shaderH = hasShaderH ? parsedShaderH : 32;
+    const groups = new Map();
+
+    (m.repairs || []).forEach((rep, repIndex) => {
+      const pixels = Array.isArray(rep.pixels) ? rep.pixels : [];
+      pixels.forEach(([x, y]) => {
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        const segmentStartX = Math.floor(x / shaderW) * shaderW;
+        const segmentStartY = Math.floor(y / shaderH) * shaderH;
+        const key = `${segmentStartX},${segmentStartY}`;
+        let segment = groups.get(key);
+        if (!segment) {
+          segment = {
+            key,
+            segmentStartX,
+            segmentStartY,
+            segmentW: shaderW,
+            segmentH: shaderH,
+            repairsMap: new Map(),
+          };
+          groups.set(key, segment);
+        }
+        const repKey = [repIndex, rep.type || '', rep.date || '', rep.initials || '', rep.status || '', rep.note || '', rep.color || ''].join('|');
+        let segmentRepair = segment.repairsMap.get(repKey);
+        if (!segmentRepair) {
+          segmentRepair = {
+            type: rep.type || 'Onbekend',
+            date: rep.date || '',
+            who: rep.initials || '',
+            note: rep.note || '',
+            color: rep.color || '#e6007e',
+            status: rep.status || 'Open',
+            pixels: [],
+          };
+          segment.repairsMap.set(repKey, segmentRepair);
+        }
+        segmentRepair.pixels.push([x, y]);
+      });
+    });
+
+    return Array.from(groups.values())
+      .sort((a, b) => (a.segmentStartY - b.segmentStartY) || (a.segmentStartX - b.segmentStartX))
+      .map((segment) => {
+        const repairs = Array.from(segment.repairsMap.values())
+          .map(r => ({ ...r, count: r.pixels.length }))
+          .sort((a, b) => (b.count - a.count) || a.type.localeCompare(b.type) || a.date.localeCompare(b.date));
+        const pixelCount = repairs.reduce((sum, r) => sum + r.count, 0);
+        return {
+          key: segment.key,
+          segmentStartX: segment.segmentStartX,
+          segmentStartY: segment.segmentStartY,
+          segmentW: segment.segmentW,
+          segmentH: segment.segmentH,
+          repairs,
+          pixelCount,
+          shaderW,
+          shaderH,
+          segmentIndexX: Math.floor(segment.segmentStartX / shaderW) + 1,
+          segmentIndexY: Math.floor(segment.segmentStartY / shaderH) + 1,
+        };
+      });
+  }
+
+  function buildSegmentPreview(m, segment, dark) {
+    const pixels = [];
+    (Array.isArray(segment?.repairs) ? segment.repairs : []).forEach((rep) => {
+      (Array.isArray(rep.pixels) ? rep.pixels : []).forEach((pixel) => pixels.push(pixel));
+    });
+    if (!pixels.length) return null;
+
+    const segmentStartX = Number(segment?.segmentStartX) || 0;
+    const segmentStartY = Number(segment?.segmentStartY) || 0;
+    const segmentW = Number(segment?.segmentW) || 32;
+    const segmentH = Number(segment?.segmentH) || 32;
+
+    const SEGMENT_EXPORT_FOOTPRINT = 500;
+    const detailBoxSize = SEGMENT_EXPORT_FOOTPRINT;
+    const detailGridW = segmentW;
+    const detailGridH = segmentH;
+    const displayW = detailBoxSize;
+    const displayH = detailBoxSize;
+    const canvasSize = 570;
+    const padding = 30;
+    const offsetX = padding + (canvasSize - padding * 2 - displayW) / 2;
+    const offsetY = padding + (canvasSize - padding * 2 - displayH) / 2;
+
+    const detailCanvas = document.createElement('canvas');
+    const dpr = window.devicePixelRatio || 1;
+    detailCanvas.width = canvasSize * dpr;
+    detailCanvas.height = canvasSize * dpr;
+    detailCanvas.style.width = canvasSize + 'px';
+    detailCanvas.style.height = canvasSize + 'px';
+
+    const dctx = detailCanvas.getContext('2d');
+    if (!dctx) return null;
+    dctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const bg = dark ? '#15151a' : '#ffffff';
+    const grid = dark ? '#2f3138' : '#e0e0e3';
+    const labelColor = dark ? '#c4c7cf' : '#6b7280';
+
+    dctx.clearRect(0, 0, canvasSize, canvasSize);
+    dctx.fillStyle = bg;
+    dctx.fillRect(0, 0, canvasSize, canvasSize);
+
+    const cellX = displayW / Math.max(detailGridW, 1);
+    const cellY = displayH / Math.max(detailGridH, 1);
+    dctx.strokeStyle = grid;
+    dctx.lineWidth = 1;
+    for (let x = 0; x <= detailGridW; x++) {
+      dctx.beginPath();
+      dctx.moveTo(offsetX + x * cellX, offsetY);
+      dctx.lineTo(offsetX + x * cellX, offsetY + displayH);
+      dctx.stroke();
+    }
+    for (let y = 0; y <= detailGridH; y++) {
+      dctx.beginPath();
+      dctx.moveTo(offsetX, offsetY + y * cellY);
+      dctx.lineTo(offsetX + displayW, offsetY + y * cellY);
+      dctx.stroke();
+    }
+
+    dctx.fillStyle = labelColor;
+    const labelFontSize = Math.max(7, Math.min(11, Math.floor(Math.min(cellX, cellY) * 0.65)));
+    dctx.font = `${labelFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI"`;
+    for (let i = 1; i <= detailGridW; i++) {
+      const x = offsetX + (i - 1) * cellX + cellX / 2;
+      dctx.textAlign = 'center';
+      dctx.fillText(String(i), x, offsetY - 4);
+    }
+    for (let i = 1; i <= detailGridH; i++) {
+      const y = offsetY + (i - 1) * cellY + cellY / 2;
+      dctx.textAlign = 'right';
+      dctx.fillText(String(i), offsetX - 3, y + labelFontSize * 0.35);
+    }
+
+    (Array.isArray(segment?.repairs) ? segment.repairs : []).forEach((rep) => {
+      const repColor = rep.color || '#e6007e';
+      (Array.isArray(rep.pixels) ? rep.pixels : []).forEach(([x, y]) => {
+        const px = x - segmentStartX;
+        const py = y - segmentStartY;
+        if (px < 0 || py < 0 || px >= detailGridW || py >= detailGridH) return;
+        dctx.fillStyle = repColor;
+        dctx.fillRect(offsetX + px * cellX + 1, offsetY + py * cellY + 1, Math.max(1, cellX - 2), Math.max(1, cellY - 2));
+      });
+    });
+
+    dctx.strokeStyle = dark ? 'rgba(250, 204, 21, 0.95)' : 'rgba(202, 138, 4, 0.95)';
+    dctx.lineWidth = 2;
+    dctx.strokeRect(offsetX - 1, offsetY - 1, displayW + 2, displayH + 2);
+
+    const moduleW = m.width || 192;
+    const moduleH = m.height || 192;
+    const moduleCanvasSize = 300;
+    const moduleCell = (moduleCanvasSize - 20) / Math.max(moduleW, moduleH);
+    const moduleDrawW = moduleW * moduleCell;
+    const moduleDrawH = moduleH * moduleCell;
+    const moduleOffsetX = 10 + (moduleCanvasSize - 20 - moduleDrawW) / 2;
+    const moduleOffsetY = 10 + (moduleCanvasSize - 20 - moduleDrawH) / 2;
+
+    const moduleCanvas = document.createElement('canvas');
+    moduleCanvas.width = moduleCanvasSize;
+    moduleCanvas.height = moduleCanvasSize;
+    const moduleDpr = window.devicePixelRatio || 1;
+    moduleCanvas.width = moduleCanvasSize * moduleDpr;
+    moduleCanvas.height = moduleCanvasSize * moduleDpr;
+    moduleCanvas.style.width = moduleCanvasSize + 'px';
+    moduleCanvas.style.height = moduleCanvasSize + 'px';
+
+    const mctx = moduleCanvas.getContext('2d');
+    if (mctx) {
+      mctx.setTransform(moduleDpr, 0, 0, moduleDpr, 0, 0);
+      mctx.fillStyle = bg;
+      mctx.fillRect(0, 0, moduleCanvasSize, moduleCanvasSize);
+
+      mctx.strokeStyle = dark ? '#2c2c30' : '#e8e8eb';
+      mctx.lineWidth = 0.5;
+      for (let x = 0; x <= moduleW; x++) {
+        mctx.beginPath();
+        mctx.moveTo(moduleOffsetX + x * moduleCell, moduleOffsetY);
+        mctx.lineTo(moduleOffsetX + x * moduleCell, moduleOffsetY + moduleDrawH);
+        mctx.stroke();
+      }
+      for (let y = 0; y <= moduleH; y++) {
+        mctx.beginPath();
+        mctx.moveTo(moduleOffsetX, moduleOffsetY + y * moduleCell);
+        mctx.lineTo(moduleOffsetX + moduleDrawW, moduleOffsetY + y * moduleCell);
+        mctx.stroke();
+      }
+
+      mctx.strokeStyle = dark ? 'rgba(255, 255, 255, 0.42)' : 'rgba(31, 41, 55, 0.55)';
+      mctx.lineWidth = 1;
+      for (let x = 0; x <= moduleW; x += segmentW) {
+        mctx.beginPath();
+        mctx.moveTo(moduleOffsetX + x * moduleCell, moduleOffsetY);
+        mctx.lineTo(moduleOffsetX + x * moduleCell, moduleOffsetY + moduleDrawH);
+        mctx.stroke();
+      }
+      for (let y = 0; y <= moduleH; y += segmentH) {
+        mctx.beginPath();
+        mctx.moveTo(moduleOffsetX, moduleOffsetY + y * moduleCell);
+        mctx.lineTo(moduleOffsetX + moduleDrawW, moduleOffsetY + y * moduleCell);
+        mctx.stroke();
+      }
+
+      const shaderCellW = segmentW * moduleCell;
+      const shaderCellH = segmentH * moduleCell;
+      const segmentBoxX = moduleOffsetX + segmentStartX * moduleCell;
+      const segmentBoxY = moduleOffsetY + segmentStartY * moduleCell;
+
+      mctx.strokeStyle = dark ? 'rgba(250, 204, 21, 0.95)' : 'rgba(202, 138, 4, 0.95)';
+      mctx.lineWidth = 2;
+      mctx.strokeRect(segmentBoxX + 1, segmentBoxY + 1, Math.max(1, shaderCellW - 2), Math.max(1, shaderCellH - 2));
+    }
+
+    return { detailCanvas, moduleCanvas, segmentW, segmentH };
+  }
+
+  function buildSegmentReportPage(m, segment, dark, index, total, isDemoSample) {
+    const page = document.createElement('div');
+    page.className = 'export-report-page';
+
+    const shell = document.createElement('div');
+    shell.className = 'export-report-shell';
+
+    const rows = Array.isArray(segment.repairs) ? segment.repairs : [];
+    const preview = rows.length ? buildSegmentPreview(m, segment, dark) : null;
+    const company = m.company || 'Bedrijf';
+    const tileType = m.name || 'Module';
+    const serial = m.sn || 'SN-000';
+    const segmentLabel = `${Number(segment?.segmentW || m.shaderWidth || 32)}×${Number(segment?.segmentH || m.shaderHeight || 32)}`;
+
+    const head = document.createElement('div');
+    head.className = 'export-report-head';
+    const leftMeta = `Shader segment ${Math.max(1, Number(segment?.segmentIndexX || 1))}/${Math.max(1, Number(total || 1))} · ${Math.max(1, Number(segment?.segmentW || m.shaderWidth || 32))}×${Math.max(1, Number(segment?.segmentH || m.shaderHeight || 32))} px`;
+    const rightMeta = `${escapeHtml(String(m.name || 'Module'))}${m.sn ? ` • ${escapeHtml(String(m.sn))}` : ''}`;
+    head.innerHTML = `
+      <div class="export-report-title-row">
+        <div class="export-report-header-left">${escapeHtml(leftMeta)}</div>
+        <div class="export-report-brand"><span class="export-brand-mark"></span>PixelTracker Export</div>
+        <div class="export-report-header-right">${rightMeta}</div>
       </div>
-      <table>
-        <thead><tr><th></th><th>Wat</th><th>Wanneer</th><th>Wie</th><th>Status</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
     `;
 
-    page.appendChild(left);
-    page.appendChild(right);
-    return { page, img };
+    const main = document.createElement('div');
+    main.className = 'export-report-main';
+
+    const leftPanel = document.createElement('div');
+    leftPanel.className = 'export-preview-panel';
+    leftPanel.innerHTML = `
+      <div class="export-panel-header">
+        <h3 class="export-panel-badge">Detail</h3>
+        <div class="export-panel-subtitle">Alle pixelnummers zichtbaar op beide assen</div>
+      </div>
+    `;
+
+    const rightPanel = document.createElement('div');
+    rightPanel.className = 'export-preview-panel';
+    rightPanel.innerHTML = `
+      <div class="export-panel-header">
+        <h3 class="export-panel-badge">Module Overview</h3>
+        <div class="export-panel-subtitle">Volledige module met highlight van dit segment</div>
+      </div>
+    `;
+
+    const repairsSection = document.createElement('div');
+    repairsSection.className = 'export-repairs-section';
+    repairsSection.innerHTML = '<h3 class="export-repairs-head">REPARATIES</h3>';
+    const repairsList = document.createElement('div');
+    repairsList.className = 'export-repairs-list';
+
+    if (rows.length) {
+      rows.forEach((r) => {
+        const row = document.createElement('div');
+        row.className = 'export-repair-row';
+        row.innerHTML = `
+          <span class="export-repair-dot" style="background:${r.color || '#e6007e'}"></span>
+          <div class="export-repair-copy">
+            <span class="export-repair-type">${escapeHtml(r.type || 'Onbekend')}</span>
+            <span class="export-report-meta-inline">${escapeHtml(r.date || '-')} · ${escapeHtml(r.who || '-')} · ${escapeHtml(r.status || 'Open')}</span>
+          </div>
+          <div class="export-repair-count">${Number(r.count || r.pixels?.length || 0)} px</div>
+        `;
+        repairsList.appendChild(row);
+      });
+    } else {
+      const empty = document.createElement('div');
+      empty.className = 'export-repair-row';
+      empty.innerHTML = '<div class="export-repair-copy"><span class="export-repair-type">Geen reparaties</span></div>';
+      repairsList.appendChild(empty);
+    }
+    repairsSection.appendChild(repairsList);
+
+    if (preview) {
+      const leftBody = document.createElement('div');
+      leftBody.className = 'export-panel-surface';
+      leftBody.appendChild(preview.detailCanvas);
+      leftPanel.appendChild(leftBody);
+
+      const rightBody = document.createElement('div');
+      rightBody.className = 'export-panel-surface';
+      rightBody.appendChild(preview.moduleCanvas);
+      rightPanel.appendChild(rightBody);
+    } else {
+      const fallback = document.createElement('div');
+      fallback.className = 'export-panel-surface';
+      fallback.textContent = 'Geen reparaties gelogd voor preview.';
+      leftPanel.appendChild(fallback.cloneNode(true));
+      rightPanel.appendChild(fallback.cloneNode(true));
+    }
+
+    const rightStack = document.createElement('div');
+    rightStack.className = 'export-right-stack';
+    rightStack.appendChild(rightPanel);
+    rightStack.appendChild(repairsSection);
+
+    main.appendChild(leftPanel);
+    main.appendChild(rightStack);
+
+    shell.appendChild(head);
+    shell.appendChild(main);
+    page.appendChild(shell);
+    return page;
+  }
+
+  function buildPrintPage(m, dark) {
+    const isDemoSample = !!m.demoMode;
+    const segments = buildSegmentGroups(m);
+    const stack = document.createElement('div');
+    stack.className = 'export-report-stack';
+
+    if (!segments.length) {
+      const fallbackSegment = {
+        key: 'fallback',
+        segmentStartX: 0,
+        segmentStartY: 0,
+        segmentW: parseInt(m.shaderWidth, 10) || 32,
+        segmentH: parseInt(m.shaderHeight, 10) || 32,
+        repairs: buildReportRows(m),
+        pixelCount: (m.repairs || []).reduce((sum, rep) => sum + (Array.isArray(rep.pixels) ? rep.pixels.length : 0), 0),
+        segmentIndexX: 1,
+        segmentIndexY: 1,
+      };
+      stack.appendChild(buildSegmentReportPage(m, fallbackSegment, dark, 0, 1, isDemoSample));
+      return { page: stack, img: null };
+    }
+
+    segments.forEach((segment, index) => {
+      stack.appendChild(buildSegmentReportPage(m, segment, dark, index, segments.length, isDemoSample));
+    });
+    return { page: stack, img: null };
   }
 
   function exportPrintA3(mode) {
     const root = document.getElementById('printExportRoot');
+    if (!root) {
+      uiAlert('Export container niet gevonden.');
+      return;
+    }
     root.innerHTML = '';
-    const modules = mode === 'selected'
-      ? (activeModule() ? [activeModule()] : [])
-      : Object.values(state.modules).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
-    if (modules.length === 0) { alert('Geen module om te exporteren.'); return; }
 
-    // Exportlayout volgt het huidige thema (licht/donker) van de app
-    const dark = document.body.classList.contains('dark');
-    if (dark) {
-      root.style.setProperty('--print-bg', '#17171a');
-      root.style.setProperty('--print-text', '#eaeaec');
-      root.style.setProperty('--print-muted', '#a3a3ab');
-      root.style.setProperty('--print-border', '#3c3c42');
-      root.style.setProperty('--print-table-border', '#333338');
+    let modules = [];
+    if (mode === 'database') {
+      modules = Object.values(state.modules || {}).filter(m => {
+        const count = (m.repairs || []).reduce((sum, r) => sum + (Array.isArray(r.pixels) ? r.pixels.length : 0), 0);
+        return count > 0;
+      });
+      if (!modules.length) {
+        uiAlert('Er zijn geen modules met gelogde pixels in de database.');
+        return;
+      }
     } else {
-      root.style.setProperty('--print-bg', '#ffffff');
-      root.style.setProperty('--print-text', '#111111');
-      root.style.setProperty('--print-muted', '#555555');
-      root.style.setProperty('--print-border', '#cccccc');
-      root.style.setProperty('--print-table-border', '#dddddd');
+      const module = activeModule();
+      if (!module) { uiAlert('Selecteer eerst een module om te exporteren.'); return; }
+      modules = [module];
     }
 
+    const dark = document.body.classList.contains('dark');
     const imgs = [];
-    modules.forEach(m => {
+    const isDatabaseMode = mode === 'database';
+    window.__pixelTrackerExportMode = isDatabaseMode ? 'database' : 'selected';
+    const dbBaseName = String(currentSaveName || 'database').trim() || 'database';
+    window.__pixelTrackerExportFolderName = isDatabaseMode ? `${dbBaseName}_exports` : '';
+
+    modules.forEach((m, index) => {
       const { page, img } = buildPrintPage(m, dark);
-      root.appendChild(page);
+      const moduleWrap = document.createElement('div');
+      moduleWrap.className = 'export-module-batch';
+      const moduleNameParts = [m.company, m.name, m.sn]
+        .filter(Boolean)
+        .map(s => String(s).trim().replace(/[/\\:*?"<>|]/g, '-'));
+      const moduleFileBase = moduleNameParts.join('_') || `module_${String(index + 1).padStart(2, '0')}`;
+      moduleWrap.dataset.exportName = `${moduleFileBase}.pdf`;
+      moduleWrap.appendChild(page);
+      root.appendChild(moduleWrap);
       imgs.push(img);
     });
 
-    document.body.classList.add('print-export-mode');
-
-    // Wacht tot alle gridafbeeldingen echt geladen/gedecodeerd zijn, anders is het
-    // canvas-beeld nog leeg op het moment dat het printdialoog opent.
-    const ready = imgs.map(img => (img.decode ? img.decode().catch(() => {}) : new Promise(res => {
+    const ready = imgs.filter(Boolean).map(img => (img.decode ? img.decode().catch(() => {}) : new Promise(res => {
       if (img.complete) res(); else { img.onload = res; img.onerror = res; }
     })));
     Promise.all(ready).then(() => {
-      requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
+      // Stel exportnaam in zodat de desktop-app die kan uitlezen
+      const m0 = modules[0];
+      const parts = [
+        m0.company, m0.name, m0.sn,
+        new Date().toISOString().slice(0, 10)
+      ].filter(Boolean).map(s => String(s).trim().replace(/[/\\:*?"<>|]/g, '-'));
+      window.__pixelTrackerExportName = (parts.join('_') || 'PixelTracker_export') + '.pdf';
+      const isDesktop = !!window.__pixelTrackerDesktop;
+      hideAppShellForExport();
+      document.body.classList.add('export-report-mode');
+      if (!isDesktop) scheduleExportRestoreFallback();
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (isDesktop) {
+          window.print();
+          return;
+        }
+        window.print();
+      }));
     });
   }
+
+  let hiddenAppShell = [];
+    let exportRestoreTimeoutId = null;
+
+    function clearExportRestoreFallback() {
+      if (exportRestoreTimeoutId !== null) {
+        clearTimeout(exportRestoreTimeoutId);
+        exportRestoreTimeoutId = null;
+      }
+    }
+
+    function forceRestoreAfterExport() {
+      clearExportRestoreFallback();
+      restoreAppShellAfterExport();
+      document.body.classList.remove('export-report-mode');
+      const root = document.getElementById('printExportRoot');
+      if (root) root.innerHTML = '';
+    }
+
+    function scheduleExportRestoreFallback(timeoutMs = 20000) {
+      clearExportRestoreFallback();
+      exportRestoreTimeoutId = setTimeout(() => {
+        if (!document.body.classList.contains('export-report-mode')) return;
+        forceRestoreAfterExport();
+        if (window.uiToast) uiToast('Exportweergave automatisch hersteld.');
+      }, timeoutMs);
+    }
+
+    window.__pixelTrackerForceExportRestore = forceRestoreAfterExport;
+  window.__pixelTrackerBuildSampleExport = () => {
+    const sample = buildSampleReportData();
+    const root = document.getElementById('printExportRoot');
+    if (!root) return false;
+    root.innerHTML = '';
+    const dark = document.body.classList.contains('dark');
+    const { page } = buildPrintPage(sample, dark);
+    root.appendChild(page);
+    return true;
+  };
+  window.__pixelTrackerBuildPrintPage = buildPrintPage;
+  window.__pixelTrackerBuildSegmentGroups = buildSegmentGroups;
+  window.__pixelTrackerExportPrintA3 = exportPrintA3;
+
+  function hideAppShellForExport() {
+    const root = document.getElementById('printExportRoot');
+    hiddenAppShell = [];
+    Array.from(document.body.children).forEach((el) => {
+      if (el === root) return;
+      hiddenAppShell.push({ el, display: el.style.display || '', visibility: el.style.visibility || '' });
+      el.style.setProperty('display', 'none', 'important');
+      el.style.setProperty('visibility', 'hidden', 'important');
+    });
+    // Zichtbaar maken in screen mode (niet alleen via @media print)
+    root.style.setProperty('display', 'block', 'important');
+    document.body.style.setProperty('background', '#eef1f6', 'important');
+  }
+  window.__pixelTrackerHideAppShellForExport = hideAppShellForExport;
+
+  function restoreAppShellAfterExport() {
+      clearExportRestoreFallback();
+    hiddenAppShell.forEach((item) => {
+      item.el.style.display = item.display;
+      item.el.style.visibility = item.visibility;
+    });
+    hiddenAppShell = [];
+    const root = document.getElementById('printExportRoot');
+    if (root) root.style.display = '';
+    document.body.style.background = '';
+  }
+  window.__pixelTrackerRestoreAppShellAfterExport = restoreAppShellAfterExport;
+
   window.addEventListener('afterprint', () => {
-    document.body.classList.remove('print-export-mode');
-    document.getElementById('printExportRoot').innerHTML = '';
+    if (window.__pixelTrackerDesktop) {
+     clearExportRestoreFallback();
+     return; // desktop-app handelt cleanup af via de native PNG-export
+     }
+     forceRestoreAfterExport();
   });
 
   document.getElementById('menuExportSelectedA3').addEventListener('click', () => {
@@ -1687,18 +4392,86 @@
     exportPrintA3('database');
   });
 
+  document.getElementById('menuSamplePrint').addEventListener('click', () => {
+    fileMenuDropdown.classList.remove('show');
+    if (!window.__pixelTrackerBuildSampleExport()) return;
+    const isDesktop = !!window.__pixelTrackerDesktop;
+    hideAppShellForExport();
+    document.body.classList.add('export-report-mode');
+    if (!isDesktop) scheduleExportRestoreFallback();
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (isDesktop) {
+        window.print();
+        return;
+      }
+      window.print();
+    }));
+  });
+
+  function showSessionRestoreNotice() {
+    if (!sessionRestored && !libraryRestored) return;
+    const el = document.getElementById('sessionRestoreNotice');
+    if (!el) return;
+    let text = 'Sessie hersteld';
+    if (sessionRestored && libraryRestored) text = 'Sessie en presets hersteld';
+    else if (libraryRestored) text = 'Preset library hersteld';
+    el.textContent = text;
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 2600);
+  }
+
+  function showStartupChoice() {
+    const overlay = document.getElementById('startupChoiceOverlay');
+    const restoreBtn = document.getElementById('startupRestoreSessionBtn');
+    const restoreStatus = document.getElementById('startupRestoreStatus');
+    restoreBtn.disabled = !startupRestoreAvailable;
+    restoreStatus.textContent = startupRestoreAvailable
+      ? (startupRestoreName ? `Beschikbaar: ${startupRestoreName}` : 'Een bewaarde sessie is beschikbaar.')
+      : 'Er is nog geen sessie om te herstellen.';
+    overlay.classList.add('show');
+    document.getElementById('startupNewFileBtn').focus();
+  }
+
+  document.getElementById('startupNewFileBtn').addEventListener('click', () => {
+    startupChoicePending = false;
+    state = defaultState();
+    selected.clear();
+    setCurrentSaveName('');
+    localStorage.removeItem(MANUAL_SAVE_SNAPSHOT_KEY);
+    save(true);
+    document.getElementById('startupChoiceOverlay').classList.remove('show');
+    renderAll(true);
+  });
+
+  document.getElementById('startupRestoreSessionBtn').addEventListener('click', () => {
+    if (!startupRestoreAvailable) return;
+    startupChoicePending = false;
+    state = startupRestoreState;
+    selected.clear();
+    setCurrentSaveName(startupRestoreName);
+    if (startupRestoreName) setAutoSaveEnabled(true);
+    markManualSaveSnapshot();
+    document.getElementById('startupChoiceOverlay').classList.remove('show');
+    renderAll(true);
+    showSessionRestoreNotice();
+  });
+
   // ---------- Render all ----------
-  function renderAll() {
-    renderModuleList();
-    renderAllModulesTable();
+  function renderAll(force) {
+    renderModuleList(!!force);
+    renderAllModulesTable(!!force);
     renderCanvas();
-    renderLegend();
-    renderStats();
-    renderRepairTable();
+    renderLegend(!!force);
+    renderStats(!!force);
+    renderRepairTable(!!force);
     updateToolbar();
   }
 
+  syncLibraryFromModules();
+  renderLibraryPresetDropdowns();
+  applyFormMemory();
   renderAll();
+  showStartupChoice();
 })();
 </script>
 </body>
