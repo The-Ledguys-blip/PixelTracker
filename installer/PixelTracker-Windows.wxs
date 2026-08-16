@@ -8,7 +8,7 @@
     Manufacturer="PixelTracker"
     UpgradeCode="4DF480CF-428E-4FC6-B03D-0C71D27AC9C7">
     <Package InstallerVersion="500" Compressed="yes" InstallScope="perUser" Platform="x64" />
-    <MajorUpgrade DowngradeErrorMessage="Er is al een nieuwere versie van PixelTracker geïnstalleerd." />
+    <MajorUpgrade DowngradeErrorMessage="Er is al een nieuwere versie van PixelTracker geinstalleerd." />
     <MediaTemplate EmbedCab="yes" />
 
     <Icon Id="PixelTrackerIcon" SourceFile="assets\app_icon.ico" />
