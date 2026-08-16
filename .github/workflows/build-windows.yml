@@ -2,6 +2,9 @@ name: Build Windows 11 Beta
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
   build-windows:
