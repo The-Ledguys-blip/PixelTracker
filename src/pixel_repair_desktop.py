@@ -145,16 +145,29 @@ class PixelTrackerWindow(QMainWindow):
             root.innerHTML = '';
             const dark = document.body.classList.contains('dark');
             const { page } = buildPrintPage(sample, dark);
-            root.appendChild(page);
+            const moduleWrap = document.createElement('div');
+            moduleWrap.className = 'export-module-batch';
+            moduleWrap.dataset.exportName = 'PixelTracker_export_multisegment.pdf';
+            moduleWrap.appendChild(page);
+            root.appendChild(moduleWrap);
             ok = true;
         }
         if (!ok) return false;
+        const root = document.getElementById('printExportRoot');
+        if (root && !root.querySelector('.export-module-batch')) {
+            const moduleWrap = document.createElement('div');
+            moduleWrap.className = 'export-module-batch';
+            moduleWrap.dataset.exportName = 'PixelTracker_export_multisegment.pdf';
+            while (root.firstChild) moduleWrap.appendChild(root.firstChild);
+            root.appendChild(moduleWrap);
+        }
         if (typeof window.__pixelTrackerHideAppShellForExport === 'function') {
             window.__pixelTrackerHideAppShellForExport();
         }
         document.body.classList.add('export-report-mode');
         const now = new Date();
         const pad = (n) => String(n).padStart(2, '0');
+        window.__pixelTrackerExportMode = 'selected';
         window.__pixelTrackerExportName = `PixelTracker_export_${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.pdf`;
         return true;
     } catch (e) {
@@ -304,9 +317,17 @@ class PixelTrackerWebView(QWebEngineView):
         self._profile.setCachePath(str((profile_root / "cache").resolve()))
         self._profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies)
         self._profile.downloadRequested.connect(self.on_download_requested)
+        self._database_save_path: Path | None = None
         self.setPage(PixelTrackerPage(self._profile, self))
         self.page().loadFinished.connect(self.on_load_finished)
         self.page().printRequested.connect(self.on_print_requested)
+
+    def _notify_download_result(self, ok: bool, saved_name: str = "") -> None:
+        """Informeert de JS-frontend of een .json-download is gelukt (en met welke naam)."""
+        safe_name = saved_name.replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
+        self.page().runJavaScript(
+            f"window.__pixelTrackerDownloadResult && window.__pixelTrackerDownloadResult({str(ok).lower()}, '{safe_name}');"
+        )
 
     def on_download_requested(self, download: QWebEngineDownloadRequest) -> None:
         suggested = Path(download.downloadFileName())
@@ -317,15 +338,72 @@ class PixelTrackerWebView(QWebEngineView):
             filter_str = 'CSV bestanden (*.csv)'
         else:
             filter_str = 'Alle bestanden (*)'
-        default_path = str(Path.home() / 'Desktop' / suggested.name)
+        save_mode = 'save_as'
+        if ext == '.json':
+            value = self._run_js_value(
+                "window.__pixelTrackerDatabaseSaveMode || 'save_as';",
+                timeout_ms=500,
+                default='save_as',
+            )
+            if isinstance(value, str):
+                save_mode = value
+
+        if ext == '.json' and save_mode == 'save' and self._database_save_path is not None:
+            # Save-gedrag met bestaand pad: direct overschrijven zonder dialoog.
+            target_path = self._database_save_path
+            temp_file = tempfile.NamedTemporaryFile(
+                dir=target_path.parent,
+                prefix=f'.{target_path.stem}-',
+                suffix='.json.tmp',
+                delete=False,
+            )
+            temp_path = Path(temp_file.name)
+            temp_file.close()
+            temp_path.unlink(missing_ok=True)
+            download.setDownloadDirectory(str(temp_path.parent))
+            download.setDownloadFileName(temp_path.name)
+
+            def _replace_current_file(state) -> None:
+                completed = QWebEngineDownloadRequest.DownloadState.DownloadCompleted
+                if state == completed and temp_path.exists():
+                    os.replace(temp_path, target_path)
+                    self._notify_download_result(True, target_path.name)
+                elif download.isFinished():
+                    temp_path.unlink(missing_ok=True)
+                    self._notify_download_result(False)
+
+            download.stateChanged.connect(_replace_current_file)
+            download.accept()
+            return
+
+        # Save zonder bestaand pad (of Save As): native opslagmenu tonen.
+        default_target = self._database_save_path if ext == '.json' and self._database_save_path else Path.home() / 'Desktop' / suggested.name
+        default_path = str(default_target)
+        dialog_title = 'Opslaan' if ext == '.json' and save_mode == 'save' else 'Opslaan als'
         path, _ = QFileDialog.getSaveFileName(
-            self, 'Opslaan als', default_path, filter_str
+            self, dialog_title, default_path, filter_str
         )
         if not path:
             download.cancel()
+            self._notify_download_result(False)
             return
-        download.setDownloadDirectory(str(Path(path).parent))
-        download.setDownloadFileName(Path(path).name)
+        target_path = Path(path)
+        if ext == '.json' and target_path.suffix.lower() != '.json':
+            target_path = target_path.with_suffix('.json')
+        if ext == '.json':
+            self._database_save_path = target_path
+        download.setDownloadDirectory(str(target_path.parent))
+        download.setDownloadFileName(target_path.name)
+
+        def _notify_save_done(state) -> None:
+            completed = QWebEngineDownloadRequest.DownloadState.DownloadCompleted
+            if state == completed:
+                self._notify_download_result(True, target_path.name)
+            elif download.isFinished():
+                self._notify_download_result(False)
+
+        if ext == '.json':
+            download.stateChanged.connect(_notify_save_done)
         download.accept()
 
     def on_print_requested(self) -> None:
@@ -367,6 +445,84 @@ class PixelTrackerWebView(QWebEngineView):
         name = str(raw or "").strip()
         cleaned = ''.join(ch if ch not in '/\\:*?"<>|' else '-' for ch in name).strip(' .')
         return cleaned or fallback
+
+    @staticmethod
+    def _capture_height_for_export(
+        full_height: int,
+        page_heights: list[int],
+        viewport_height: int,
+    ) -> int:
+        if page_heights:
+            return max(max(page_heights), viewport_height, 600)
+        return max(full_height, viewport_height, 600)
+
+    def _wait_for_export_render(self, timeout_ms: int = 80) -> None:
+        loop = QEventLoop(self)
+        QTimer.singleShot(timeout_ms, loop.quit)
+        loop.exec()
+
+    def _save_module_pdf_sequentially(
+        self,
+        path: Path,
+        module_index: int,
+        page_count: int,
+    ) -> bool:
+        if not REPORTLAB_AVAILABLE or page_count <= 0:
+            return False
+
+        page_width, page_height = landscape(A3)
+        pdf = pdf_canvas.Canvas(str(path), pagesize=(page_width, page_height))
+        written_pages = 0
+        try:
+            for page_index in range(page_count):
+                rect = self._run_js_value(
+                    f"(() => {{ const modules = Array.from(document.querySelectorAll('.export-module-batch')); modules.forEach((mod, i) => mod.style.display = i === {module_index} ? 'block' : 'none'); const pages = modules[{module_index}] ? Array.from(modules[{module_index}].querySelectorAll('.export-report-page')) : []; pages.forEach((page, i) => page.style.display = i === {page_index} ? 'block' : 'none'); const el = pages[{page_index}]; if (!el) return null; const r = el.getBoundingClientRect(); return {{ x: Math.round(r.left + window.scrollX), y: Math.round(r.top + window.scrollY), width: Math.round(r.width), height: Math.round(r.height) }}; }})()",
+                    timeout_ms=1200,
+                    default=None,
+                )
+                if not isinstance(rect, dict):
+                    continue
+                self._wait_for_export_render()
+                pixmap = self.grab()
+                if not pixmap or pixmap.isNull():
+                    continue
+
+                dpr = float(pixmap.devicePixelRatio() or 1.0)
+                x = max(0, int((rect.get('x', 0) or 0) * dpr))
+                y = max(0, int((rect.get('y', 0) or 0) * dpr))
+                width = min(int((rect.get('width', 0) or 0) * dpr), int(pixmap.width()) - x)
+                height = min(int((rect.get('height', 0) or 0) * dpr), int(pixmap.height()) - y)
+                if width <= 0 or height <= 0:
+                    continue
+
+                crop = pixmap.copy(x, y, width, height)
+                if crop.isNull():
+                    continue
+                tmp_path = Path(tempfile.NamedTemporaryFile(suffix='.png', delete=False).name)
+                try:
+                    if not crop.save(str(tmp_path), 'PNG'):
+                        continue
+                    pdf.drawImage(
+                        ImageReader(str(tmp_path)),
+                        0,
+                        0,
+                        width=page_width,
+                        height=page_height,
+                        preserveAspectRatio=True,
+                        anchor='c',
+                    )
+                    pdf.showPage()
+                    written_pages += 1
+                finally:
+                    tmp_path.unlink(missing_ok=True)
+        finally:
+            if written_pages:
+                pdf.save()
+
+        if written_pages == page_count:
+            return True
+        path.unlink(missing_ok=True)
+        return False
 
     def _save_multi_page_pdf_from_crops(self, path: str, pixmap, rects) -> bool:
         if not REPORTLAB_AVAILABLE:
@@ -451,6 +607,17 @@ class PixelTrackerWebView(QWebEngineView):
         if self.page() is None:
             return
 
+        export_mode = self._run_js_value(
+            "window.__pixelTrackerExportMode || 'selected';",
+            timeout_ms=600,
+            default='selected',
+        )
+        page_heights = self._run_js_value_list(
+            "Array.from(document.querySelectorAll('.export-report-page')).map((el) => Math.ceil(el.getBoundingClientRect().height));",
+            timeout_ms=1000,
+            default=[],
+        )
+
         capture_width = self._run_js_value(
             "Math.ceil(Math.max(document.body.scrollWidth, document.documentElement.scrollWidth, document.getElementById('printExportRoot')?.scrollWidth || 0, window.innerWidth));",
             timeout_ms=1000,
@@ -467,8 +634,16 @@ class PixelTrackerWebView(QWebEngineView):
         except Exception:
             capture_width = max(self.width(), 800)
         try:
-            capture_height = max(int(capture_height or 0), self.height(), 600)
-        except Exception:
+            normalized_heights = [int(height) for height in page_heights if int(height) > 0]
+        except (TypeError, ValueError):
+            normalized_heights = []
+        try:
+            capture_height = self._capture_height_for_export(
+                int(capture_height or 0),
+                normalized_heights,
+                self.height(),
+            )
+        except (TypeError, ValueError):
             capture_height = max(self.height(), 600)
 
         original_window_size = self.size()
@@ -499,50 +674,47 @@ class PixelTrackerWebView(QWebEngineView):
                 self.page().runJavaScript("if(window.uiToast) uiToast('PDF export mislukte; probeer opnieuw.');")
 
         def _finish_capture() -> None:
-            export_mode = self._run_js_value("window.__pixelTrackerExportMode || 'selected';", timeout_ms=600, default='selected')
             folder_hint = self._run_js_value("window.__pixelTrackerExportFolderName || '';", timeout_ms=600, default='')
             module_exports = self._run_js_value_list(
                 "Array.from(document.querySelectorAll('.export-module-batch')).map((mod, idx) => ({ name: mod.dataset.exportName || `module_${String(idx + 1).padStart(2, '0')}.pdf`, rects: Array.from(mod.querySelectorAll('.export-report-page')).map((el) => { const r = el.getBoundingClientRect(); return { x: Math.round(r.left + window.scrollX), y: Math.round(r.top + window.scrollY), width: Math.round(r.width), height: Math.round(r.height) }; }) }));",
                 timeout_ms=1200,
                 default=[],
             )
-            rects = self._run_js_value_list(
-                "Array.from(document.querySelectorAll('.export-report-page')).map((el) => { const r = el.getBoundingClientRect(); return { x: Math.round(r.left + window.scrollX), y: Math.round(r.top + window.scrollY), width: Math.round(r.width), height: Math.round(r.height) }; });",
-                timeout_ms=1200,
-                default=[],
-            )
-            pixmap = self.grab()
-
             success = False
-            if pixmap and not pixmap.isNull():
-                if export_mode == 'database' and module_exports:
-                    folder_name = self._safe_folder_name(folder_hint, fallback="database_exports")
-                    target_dir = downloads / folder_name
-                    if target_dir.exists():
-                        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-                        target_dir = downloads / f"{folder_name}_{stamp}"
-                    target_dir.mkdir(parents=True, exist_ok=True)
+            if export_mode == 'database' and module_exports:
+                folder_name = self._safe_folder_name(folder_hint, fallback="database_exports")
+                target_dir = downloads / folder_name
+                if target_dir.exists():
+                    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                    target_dir = downloads / f"{folder_name}_{stamp}"
+                target_dir.mkdir(parents=True, exist_ok=True)
 
-                    used_names: set[str] = set()
-                    ok_count = 0
-                    for idx, module in enumerate(module_exports, start=1):
-                        raw_name = str(module.get('name') or f"module_{idx:02d}.pdf")
-                        base_name = self._safe_pdf_name(raw_name, fallback=f"module_{idx:02d}")[:-4]
-                        module_name = f"{base_name}.pdf"
-                        suffix = 2
-                        while module_name.lower() in used_names:
-                            module_name = f"{base_name}_{suffix}.pdf"
-                            suffix += 1
-                        used_names.add(module_name.lower())
-                        module_path = target_dir / module_name
-                        module_rects = module.get('rects') if isinstance(module, dict) else None
-                        if isinstance(module_rects, list) and self._save_multi_page_pdf_from_crops(str(module_path), pixmap, module_rects):
-                            ok_count += 1
-                        elif module_path.exists():
-                            module_path.unlink(missing_ok=True)
-                    success = ok_count == len(module_exports)
-                else:
-                    success = self._save_multi_page_pdf_from_crops(path, pixmap, rects)
+                used_names: set[str] = set()
+                ok_count = 0
+                for idx, module in enumerate(module_exports, start=1):
+                    raw_name = str(module.get('name') or f"module_{idx:02d}.pdf")
+                    base_name = self._safe_pdf_name(raw_name, fallback=f"module_{idx:02d}")[:-4]
+                    module_name = f"{base_name}.pdf"
+                    suffix = 2
+                    while module_name.lower() in used_names:
+                        module_name = f"{base_name}_{suffix}.pdf"
+                        suffix += 1
+                    used_names.add(module_name.lower())
+                    module_path = target_dir / module_name
+                    module_rects = module.get('rects') if isinstance(module, dict) else None
+                    page_count = len(module_rects) if isinstance(module_rects, list) else 0
+                    if self._save_module_pdf_sequentially(module_path, idx - 1, page_count):
+                        ok_count += 1
+                success = ok_count == len(module_exports)
+            elif module_exports:
+                first_module = module_exports[0]
+                first_rects = first_module.get('rects') if isinstance(first_module, dict) else None
+                page_count = len(first_rects) if isinstance(first_rects, list) else 0
+                success = self._save_module_pdf_sequentially(Path(path), 0, page_count)
+            else:
+                pixmap = self.grab()
+                if pixmap and not pixmap.isNull():
+                    success = self._save_multi_page_pdf_from_crops(path, pixmap, [])
                     if not success and Path(path).exists():
                         Path(path).unlink(missing_ok=True)
 

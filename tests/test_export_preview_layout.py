@@ -15,8 +15,8 @@ class ExportPreviewLayoutTests(unittest.TestCase):
         self.assertIn("if (!startupChoicePending)", html)
         self.assertIn("pixelRepairApp_betaPresetReset_v2_1_28", html)
         self.assertIn("const emptyLibrary = JSON.stringify(defaultLibrary());", html)
-        self.assertIn("version='2.1.32'", spec)
-        self.assertIn("'CFBundleShortVersionString': '2.1.32'", spec)
+        self.assertIn("version='2.1.36'", spec)
+        self.assertIn("'CFBundleShortVersionString': '2.1.36'", spec)
 
     def test_desktop_export_runs_without_page_navigation(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
@@ -52,35 +52,57 @@ class ExportPreviewLayoutTests(unittest.TestCase):
         self.assertIn("name='PixelTracker-Windows'", windows_spec)
         self.assertIn("PROJECT_ROOT / 'assets' / 'app_icon.ico'", windows_spec)
         self.assertIn("Path(SPECPATH) / 'version_info_windows.txt'", windows_spec)
-        self.assertIn("ProductVersion', '2.1.32 Beta'", version_info)
+        self.assertIn("ProductVersion', '2.1.36 Beta'", version_info)
         self.assertIn("DefaultDirName={localappdata}\\Programs\\{#AppName}", installer)
         self.assertIn("PrivilegesRequired=lowest", installer)
-        self.assertIn("PixelTracker_V2.1.32_Beta_Windows11_Setup", installer)
+        self.assertIn("PixelTracker_V2.1.36_Beta_Windows11_Setup", installer)
         self.assertIn("build\\PixelTracker-Windows.spec", build_script)
-        self.assertIn('Version="2.1.32"', msi_definition)
+        self.assertIn('Version="2.1.36"', msi_definition)
         self.assertIn('InstallScope="perUser"', msi_definition)
         self.assertIn('UpgradeCode="4DF480CF-428E-4FC6-B03D-0C71D27AC9C7"', msi_definition)
         self.assertIn('SourceFile="assets\\app_icon.ico"', msi_definition)
         self.assertIn("heat.exe", msi_build_script)
         self.assertIn("-ag -sfrag -srd -sreg", msi_build_script)
+        self.assertIn("-sice:ICE38 -sice:ICE64 -sice:ICE91", msi_build_script)
         self.assertIn("if ($LASTEXITCODE -ne 0)", msi_build_script)
-        self.assertIn("PixelTracker_V2.1.32_Beta_Windows11.msi", msi_build_script)
+        self.assertIn("PixelTracker_V2.1.36_Beta_Windows11.msi", msi_build_script)
         self.assertIn("workflow_dispatch:", workflow)
         self.assertIn("runs-on: windows-2022", workflow)
-        self.assertIn("dist/PixelTracker_V2.1.32_Beta_Windows11_Setup.exe", workflow)
-        self.assertIn("dist/PixelTracker_V2.1.32_Beta_Windows11.msi", workflow)
+        self.assertIn("dist/PixelTracker_V2.1.36_Beta_Windows11_Setup.exe", workflow)
+        self.assertIn("dist/PixelTracker_V2.1.36_Beta_Windows11.msi", workflow)
 
     def test_quick_repair_shortcuts_and_build_version(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
         html_path = repo_root / "assets" / "pixel_repair_app.html"
         html = html_path.read_text(encoding="utf-8")
 
-        self.assertIn("Build V2.1.32 Beta", html)
-        self.assertIn("const BUILD_VERSION = 'V2.1.32 Beta';", html)
+        self.assertIn("Build V2.1.36 Beta", html)
+        self.assertIn("const BUILD_VERSION = 'V2.1.36 Beta';", html)
         self.assertIn("key !== '1' && key !== '2' && key !== '3'", html)
         self.assertIn("quickAddRepair('Nieuwe Pixel gezet', '#e6007e')", html)
         self.assertIn("quickAddRepair('Pad Paper Gebruikt', '#2563eb')", html)
         self.assertIn("quickAddRepair('Trace gemaakt', '#f59e0b')", html)
+
+    def test_database_save_uses_stable_name_and_distinct_save_modes(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        html = (repo_root / "assets" / "pixel_repair_app.html").read_text(encoding="utf-8")
+
+        self.assertIn("a.download = `${base}.json`;", html)
+        self.assertNotIn("a.download = `${base}_${timestampCompact()}.json`;", html)
+        self.assertIn("exportDatabaseJson(currentSaveName, 'save')", html)
+        self.assertIn("exportDatabaseJson(name, 'save_as')", html)
+
+    def test_single_selected_pixel_supports_arrow_key_navigation(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        html = (repo_root / "assets" / "pixel_repair_app.html").read_text(encoding="utf-8")
+
+        self.assertIn("ArrowLeft: [-1, 0]", html)
+        self.assertIn("ArrowRight: [1, 0]", html)
+        self.assertIn("ArrowUp: [0, -1]", html)
+        self.assertIn("ArrowDown: [0, 1]", html)
+        self.assertIn("selected.size !== 1", html)
+        self.assertIn("e.preventDefault();", html)
+        self.assertIn("keepSelectedPixelInView(nextX, nextY);", html)
 
     def test_export_preview_uses_shader_segment_groups(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
@@ -95,6 +117,8 @@ class ExportPreviewLayoutTests(unittest.TestCase):
         self.assertIn("stack.className = 'export-report-stack';", html)
         self.assertIn("const detailGridW = segmentW;", html)
         self.assertIn("const detailGridH = segmentH;", html)
+        self.assertIn("String(segmentStartX + i)", html)
+        self.assertIn("String(segmentStartY + i)", html)
         self.assertIn("const shaderCellW = segmentW * moduleCell;", html)
         self.assertIn("const shaderCellH = segmentH * moduleCell;", html)
         self.assertIn("const moduleCanvasSize = 300;", html)

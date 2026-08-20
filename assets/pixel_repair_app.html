@@ -258,7 +258,26 @@
     border: 1px solid var(--border);
     border-radius: 6px;
     background: var(--chip-bg);
-    padding: 8px;
+    padding: 8px 8px 26px 8px;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+  }
+  .canvas-scroll::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .canvas-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .canvas-scroll::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 6px;
+  }
+  .canvas-scroll::-webkit-scrollbar-thumb:hover {
+    background: var(--text-faint);
+  }
+  .canvas-scroll::-webkit-scrollbar-corner {
+    background: transparent;
   }
   .canvas-grid-wrap {
     display: grid;
@@ -479,7 +498,25 @@
   }
 
   /* ---------- A3-exportlayout (modern report style) ---------- */
-  #printExportRoot { display: none; }
+  #printExportRoot {
+    display: none;
+    position: fixed;
+    left: -99999px;
+    top: 0;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  #printExportRoot.export-active {
+    display: block;
+    left: 0;
+    top: 0;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    pointer-events: auto;
+  }
   .export-report-stack {
     width: 100%;
     display: block;
@@ -923,7 +960,7 @@
   <div class="menu-wrap">
     <button class="menu-trigger" id="fileMenuBtn">Bestand ▾</button>
     <div class="menu-dropdown" id="fileMenuDropdown">
-      <button id="menuSaveJson">Database opslaan (.json)</button>
+      <button id="menuSaveJson">Save</button>
       <button id="menuSaveAsJson">Database opslaan als...</button>
       <button id="menuLoadJson">Database laden (.json)</button>
       <div class="submenu-wrap" id="recentMenuWrap">
@@ -951,7 +988,7 @@
 <header class="app-header">
   <h1>PixelTracker</h1>
   <div class="header-meta">
-    <span id="buildVersionBadge" class="build-badge">Build V2.1.32 Beta</span>
+    <span id="buildVersionBadge" class="build-badge">Build V2.1.36 Beta</span>
     <span class="save-status" title="Opslagstatus">
       <span id="currentSaveStatusDot" class="save-status-dot unsaved" aria-hidden="true"></span>
       <span id="currentSaveName" class="hint" style="margin:0; white-space:nowrap;">Bestand: nog niet opgeslagen</span>
@@ -1019,8 +1056,8 @@
     </div>
 
     <div class="panel db-panel">
-      <h2>Database <span class="tab-count" id="dbTabCount">0</span></h2>
-      <input type="text" id="dbSearch" placeholder="🔍 Zoek op naam..." style="margin-bottom:8px;">
+      <h2>Database <span class="tab-count" id="dbTabCount">0</span> <span class="tab-count" id="dbRepairCount">0 reparaties</span></h2>
+      <input type="text" id="dbSearch" placeholder="🔍 Zoek op naam of scan SN..." style="margin-bottom:8px;">
       <div id="moduleList"></div>
     </div>
   </div>
@@ -1038,7 +1075,7 @@
       <button id="addRepairBtn" class="primary" disabled>+ Reparatie (0 px)</button>
     </div>
 
-    <div class="hint" style="margin-bottom:10px;">Klik en sleep voor een blokselectie · shift+klik voegt losse pixels toe · <strong>Ctrl+1</strong> = Nieuwe Pixel gezet · <strong>Ctrl+2</strong> = Pad Paper Gebruikt · <strong>Ctrl+3</strong> = Trace gemaakt · <strong>Esc</strong> = selectie opheffen · <strong>Ctrl+Z</strong> = ongedaan maken · <strong>Ctrl+Shift+Z</strong> = opnieuw</div>
+    <div class="hint" style="margin-bottom:10px;">Klik en sleep voor een blokselectie · shift+klik voegt losse pixels toe · <strong>← ↑ → ↓</strong> = geselecteerde pixel verplaatsen · <strong>Ctrl+1</strong> = Nieuwe Pixel gezet · <strong>Ctrl+2</strong> = Pad Paper Gebruikt · <strong>Ctrl+3</strong> = Trace gemaakt · <strong>Esc</strong> = selectie opheffen · <strong>Ctrl+Z</strong> = ongedaan maken · <strong>Ctrl+Shift+Z</strong> = opnieuw</div>
 
     <div class="stats" id="statsRow"></div>
 
@@ -1246,7 +1283,7 @@
 (function() {
   const STORAGE_KEY = 'pixelRepairApp_v2';
   // Bump this on every release update (V2.1, V2.2, V2.3, ...).
-    const BUILD_VERSION = 'V2.1.32 Beta';
+    const BUILD_VERSION = 'V2.1.36 Beta';
   const MANUAL_SAVE_SNAPSHOT_KEY = 'pixelRepairApp_lastManualSaveSnapshot_v1';
   const RECENT_FILES_KEY = 'pixelRepairApp_recentFiles_v1';
   const CURRENT_SAVE_NAME_KEY = 'pixelRepairApp_currentSaveName_v1';
@@ -1819,7 +1856,17 @@
     el.textContent = 'Build ' + BUILD_VERSION;
   }
 
-  function exportDatabaseJson(customBaseName) {
+  let pendingDatabaseDownloadName = null;
+
+  function applySavedState(name) {
+    setCurrentSaveName(name);
+    setAutoSaveEnabled(true);
+    rememberRecentFile(name);
+    markManualSaveSnapshot();
+    flushAutosaveRecentSnapshot();
+  }
+
+  function exportDatabaseJson(customBaseName, saveMode = 'save') {
     const json = JSON.stringify(state, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const a = document.createElement('a');
@@ -1828,14 +1875,26 @@
     const fallbackScope = active ? slugify(active.name) : 'database';
     const originalName = String(customBaseName || currentSaveName || fallbackScope || 'database').trim();
     const base = slugify(originalName);
-    a.download = `${base}_${timestampCompact()}.json`;
+    window.__pixelTrackerDatabaseSaveMode = saveMode;
+    a.download = `${base}.json`;
     a.click();
-    setCurrentSaveName(originalName);
-    setAutoSaveEnabled(true);
-    rememberRecentFile(originalName);
-    markManualSaveSnapshot();
-    flushAutosaveRecentSnapshot();
+    if (window.__pixelTrackerDesktop) {
+      // Desktop-shell meldt via __pixelTrackerDownloadResult of het opslaan gelukt is
+      // (en met welke echte bestandsnaam), zodat we alleen "opgeslagen" tonen na succes.
+      pendingDatabaseDownloadName = originalName;
+    } else {
+      // Browser-omgeving: download start direct, pas state meteen toe.
+      applySavedState(originalName);
+    }
   }
+
+  // Desktop-shell roept dit aan nadat een .json-download is voltooid of geannuleerd.
+  window.__pixelTrackerDownloadResult = function(ok, savedName) {
+    const pending = pendingDatabaseDownloadName;
+    pendingDatabaseDownloadName = null;
+    if (!ok || !pending) return;
+    applySavedState(String(savedName || pending || 'database').trim());
+  };
 
   const startupRestoreState = load();
   const startupRestoreAvailable = sessionRestored || Object.keys(startupRestoreState.modules || {}).length > 0;
@@ -2325,9 +2384,34 @@
     renderModuleList(true);
   });
 
+  // Barcodescanners gedragen zich als een toetsenbord en sturen na het scannen automatisch
+  // een Enter. Bij een exacte SN-match wordt de module direct geselecteerd; anders wordt
+  // de eerste zoekresultaat geselecteerd.
+  document.getElementById('dbSearch').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const q = dbSearchQuery;
+    if (!q) return;
+    const mods = Object.values(state.modules);
+    const found = mods.find(m =>
+      (m.sn || '').toLowerCase() === q ||
+      (m.sn || '').toLowerCase().includes(q)
+    ) || mods.find(m =>
+      (m.name || '').toLowerCase().includes(q) ||
+      (m.company || '').toLowerCase().includes(q)
+    );
+    if (found) {
+      selectModule(found.id);
+      renderModuleList(true);
+      document.getElementById('dbSearch').blur();
+    }
+  });
+
   function renderModuleList(force) {
     const list = document.getElementById('moduleList');
     document.getElementById('dbTabCount').textContent = Object.keys(state.modules).length;
+    const totalRepairs = Object.values(state.modules).reduce((sum, m) => sum + (m.repairs || []).length, 0);
+    document.getElementById('dbRepairCount').textContent = `${totalRepairs} reparaties`;
     let mods = Object.values(state.modules).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
     if (mods.length === 0) {
       renderCacheModuleListSig = 'empty::q=' + dbSearchQuery;
@@ -2336,7 +2420,11 @@
       return;
     }
     if (dbSearchQuery) {
-      mods = mods.filter(m => (m.name || '').toLowerCase().includes(dbSearchQuery));
+      mods = mods.filter(m =>
+        (m.name || '').toLowerCase().includes(dbSearchQuery) ||
+        (m.company || '').toLowerCase().includes(dbSearchQuery) ||
+        (m.sn || '').toLowerCase().includes(dbSearchQuery)
+      );
       if (mods.length === 0) {
         renderCacheModuleListSig = 'empty-search::q=' + dbSearchQuery;
         renderCacheModuleListActiveId = '';
@@ -2938,6 +3026,45 @@
     updateToolbar();
   });
 
+  function keepSelectedPixelInView(x, y) {
+    const padding = 12;
+    const left = canvas.offsetLeft + x * cellSize;
+    const top = canvas.offsetTop + y * cellSize;
+    const right = left + cellSize;
+    const bottom = top + cellSize;
+    if (left < canvasScroll.scrollLeft) canvasScroll.scrollLeft = Math.max(0, left - padding);
+    else if (right > canvasScroll.scrollLeft + canvasScroll.clientWidth) canvasScroll.scrollLeft = right - canvasScroll.clientWidth + padding;
+    if (top < canvasScroll.scrollTop) canvasScroll.scrollTop = Math.max(0, top - padding);
+    else if (bottom > canvasScroll.scrollTop + canvasScroll.clientHeight) canvasScroll.scrollTop = bottom - canvasScroll.clientHeight + padding;
+  }
+
+  document.addEventListener('keydown', (e) => {
+    const directions = {
+      ArrowLeft: [-1, 0],
+      ArrowRight: [1, 0],
+      ArrowUp: [0, -1],
+      ArrowDown: [0, 1]
+    };
+    const direction = directions[e.key];
+    if (!direction || selected.size !== 1 || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+    const activeElement = document.activeElement;
+    const tag = (activeElement && activeElement.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (activeElement && activeElement.isContentEditable)) return;
+    const m = activeModule();
+    if (!m) return;
+
+    e.preventDefault();
+    const [key] = selected;
+    const [x, y] = key.split(',').map(Number);
+    const nextX = Math.max(0, Math.min(m.width - 1, x + direction[0]));
+    const nextY = Math.max(0, Math.min(m.height - 1, y + direction[1]));
+    if (nextX === x && nextY === y) return;
+    selected = new Set([pxKey(nextX, nextY)]);
+    renderCanvas();
+    updateToolbar();
+    keepSelectedPixelInView(nextX, nextY);
+  }, { passive: false });
+
   let zoomRaf = null;
   function scheduleZoomRender() {
     if (zoomRaf) return;
@@ -3428,9 +3555,19 @@
   libraryMenuDropdown.addEventListener('click', (e) => e.stopPropagation());
 
   document.getElementById('menuSaveJson').addEventListener('click', () => {
-    if (!currentSaveName) openSaveAsModal();
-    else exportDatabaseJson(currentSaveName);
+    // Save-gedrag: geen bestandsnaam → native opslagmenu (via desktop-shell);
+    // bestaande file → direct overschrijven zonder dialoog.
+    if (!currentSaveName) exportDatabaseJson('', 'save');
+    else exportDatabaseJson(currentSaveName, 'save');
     fileMenuDropdown.classList.remove('show');
+  });
+
+  // Standaard "Opslaan" (Cmd+S / Ctrl+S) — werkt als een normale Save.
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    if (e.key.toLowerCase() !== 's') return;
+    e.preventDefault();
+    exportDatabaseJson(currentSaveName, 'save');
   });
 
   const saveAsModalOverlay = document.getElementById('saveAsModalOverlay');
@@ -3451,7 +3588,7 @@
   }
   function commitSaveAs() {
     const name = saveAsNameInput.value.trim() || suggestedSaveName();
-    exportDatabaseJson(name);
+    exportDatabaseJson(name, 'save_as');
     closeSaveAsModal();
     if (pendingCloseAfterSaveAs) {
       pendingCloseAfterSaveAs = false;
@@ -4010,12 +4147,12 @@
     for (let i = 1; i <= detailGridW; i++) {
       const x = offsetX + (i - 1) * cellX + cellX / 2;
       dctx.textAlign = 'center';
-      dctx.fillText(String(i), x, offsetY - 4);
+      dctx.fillText(String(segmentStartX + i), x, offsetY - 4);
     }
     for (let i = 1; i <= detailGridH; i++) {
       const y = offsetY + (i - 1) * cellY + cellY / 2;
       dctx.textAlign = 'right';
-      dctx.fillText(String(i), offsetX - 3, y + labelFontSize * 0.35);
+      dctx.fillText(String(segmentStartY + i), offsetX - 3, y + labelFontSize * 0.35);
     }
 
     (Array.isArray(segment?.repairs) ? segment.repairs : []).forEach((rep) => {
@@ -4357,6 +4494,7 @@
       el.style.setProperty('visibility', 'hidden', 'important');
     });
     // Zichtbaar maken in screen mode (niet alleen via @media print)
+    root.classList.add('export-active');
     root.style.setProperty('display', 'block', 'important');
     document.body.style.setProperty('background', '#eef1f6', 'important');
   }
@@ -4370,7 +4508,10 @@
     });
     hiddenAppShell = [];
     const root = document.getElementById('printExportRoot');
-    if (root) root.style.display = '';
+    if (root) {
+      root.classList.remove('export-active');
+      root.style.display = '';
+    }
     document.body.style.background = '';
   }
   window.__pixelTrackerRestoreAppShellAfterExport = restoreAppShellAfterExport;
