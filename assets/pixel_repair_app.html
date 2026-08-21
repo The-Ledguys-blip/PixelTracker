@@ -4424,8 +4424,7 @@
       // Stel exportnaam in zodat de desktop-app die kan uitlezen
       const m0 = modules[0];
       const parts = [
-        m0.company, m0.name, m0.sn,
-        new Date().toISOString().slice(0, 10)
+        m0.company, m0.name, m0.sn
       ].filter(Boolean).map(s => String(s).trim().replace(/[/\\:*?"<>|]/g, '-'));
       window.__pixelTrackerExportName = (parts.join('_') || 'PixelTracker_export') + '.pdf';
       const isDesktop = !!window.__pixelTrackerDesktop;

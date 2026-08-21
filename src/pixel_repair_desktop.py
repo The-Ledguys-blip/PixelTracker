@@ -165,10 +165,8 @@ class PixelTrackerWindow(QMainWindow):
             window.__pixelTrackerHideAppShellForExport();
         }
         document.body.classList.add('export-report-mode');
-        const now = new Date();
-        const pad = (n) => String(n).padStart(2, '0');
         window.__pixelTrackerExportMode = 'selected';
-        window.__pixelTrackerExportName = `PixelTracker_export_${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.pdf`;
+        window.__pixelTrackerExportName = 'PixelTracker_export.pdf';
         return true;
     } catch (e) {
         return false;
@@ -595,8 +593,7 @@ class PixelTrackerWebView(QWebEngineView):
         # Lees de exportnaam die JS heeft ingesteld op basis van module-data
         name = self._run_js_value("window.__pixelTrackerExportName || null;", timeout_ms=1000, default=None)
         if not name or not isinstance(name, str):
-            timestamp = datetime.now().strftime("%Y-%m-%d_%H%M")
-            name = f"PixelTracker_export_{timestamp}.pdf"
+            name = "PixelTracker_export.pdf"
         else:
             if not name.lower().endswith('.pdf'):
                 name = Path(name).with_suffix('.pdf').name
