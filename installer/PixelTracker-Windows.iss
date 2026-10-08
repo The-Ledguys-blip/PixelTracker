@@ -1,5 +1,5 @@
 #define AppName "PixelTracker"
-#define AppVersion "2.1.36"
+#define AppVersion "3.0.13"
 #define AppPublisher "PixelTracker"
 #define AppExeName "PixelTracker.exe"
 
@@ -16,7 +16,7 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\dist
-OutputBaseFilename=PixelTracker_V2.1.36_Beta_Windows11_Setup
+OutputBaseFilename=PixelTracker_V3.0.13_Beta_Windows11_Setup
 SetupIconFile=..\assets\app_icon.ico
 UninstallDisplayIcon={app}\{#AppExeName}
 Compression=lzma2/max

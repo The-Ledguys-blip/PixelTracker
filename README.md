@@ -35,7 +35,7 @@ Voer vanuit PowerShell in de repository uit:
 ```
 
 Resultaat:
-- `dist\PixelTracker_V2.1.36_Beta_Windows11_Setup.exe`
+- `dist\PixelTracker_V3.0.13_Beta_Windows11_Setup.exe`
 
 Voor een MSI-installer installeer je ook WiX Toolset 3 (`winget install WiXToolset.WiXToolset`) en voer je uit:
 
@@ -44,4 +44,4 @@ Voor een MSI-installer installeer je ook WiX Toolset 3 (`winget install WiXTools
 ```
 
 Resultaat:
-- `dist\PixelTracker_V2.1.36_Beta_Windows11.msi`
+- `dist\PixelTracker_V3.0.13_Beta_Windows11.msi`

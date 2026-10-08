@@ -87,6 +87,48 @@ class HtmlPathTests(unittest.TestCase):
         self.assertIn("window.__pixelTrackerDatabaseSaveMode", source)
         self.assertIn("os.replace(temp_path, target_path)", source)
 
+    def test_silent_save_target_never_falls_back_to_a_dialog_on_a_missed_read(self) -> None:
+        module = self.load_desktop_module()
+        decide = module.PixelTrackerWebView._silent_save_target
+        known = "/Users/test/Documents/db/klant.ptdb"
+
+        # Gewone 'Opslaan' (download-route) waarin de JS-read geen antwoord gaf:
+        # alsnog zílver overschrijven in plaats van het "Opslaan als"-paneel.
+        self.assertEqual(decide("", "", known, from_download=True), Path(known))
+        # Read beantwoordd mét pad → dat pad.
+        self.assertEqual(
+            decide("save", known, None, from_download=True), Path(known)
+        )
+        # Expliciete 'Opslaan als' opent wél het paneel.
+        self.assertIsNone(decide("save_as", known, known, from_download=True))
+        # Download-route zonder enig bekend pad → paneel is de enige optie.
+        self.assertIsNone(decide("", "", None, from_download=True))
+
+    def test_silent_save_target_panel_route_requires_an_explicit_save_with_path(self) -> None:
+        module = self.load_desktop_module()
+        decide = module.PixelTrackerWebView._silent_save_target
+        known = "/Users/test/Documents/db/klant.ptdb"
+
+        # Paneel-route zonder antwoord of met 'save_as' → nooit stil overschrijven.
+        self.assertIsNone(decide("", "", known, from_download=False))
+        self.assertIsNone(decide("save_as", known, known, from_download=False))
+        # 'Nieuwe database': frontend kent geen pad meer, shell nog wel — het oude
+        # bestand mag níet stille worden overschreven.
+        self.assertIsNone(decide("save", "", known, from_download=False))
+        # Alleen een expliciete 'save' mét pad schrijft hier stil weg.
+        self.assertEqual(decide("save", known, None, from_download=False), Path(known))
+
+    def test_valid_db_path_rejects_non_absolute_and_unknown_extensions(self) -> None:
+        module = self.load_desktop_module()
+        valid = module.PixelTrackerWebView._valid_db_path
+
+        self.assertEqual(valid("/tmp/klant.ptdb"), Path("/tmp/klant.ptdb"))
+        self.assertEqual(valid("  /tmp/klant.json  "), Path("/tmp/klant.json"))
+        self.assertIsNone(valid(""))
+        self.assertIsNone(valid(None))
+        self.assertIsNone(valid("klant.ptdb"))
+        self.assertIsNone(valid("/tmp/klant.csv"))
+
 
 if __name__ == "__main__":
     unittest.main()

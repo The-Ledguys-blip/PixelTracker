@@ -77,6 +77,7 @@ class Module:
     width: int
     height: int
     updatedAt: str
+    nonRepairable: bool = False
     repairs: list[Repair] = field(default_factory=list)
 
 
@@ -125,6 +126,7 @@ class PixelTrackerApp(tk.Tk):
         self.selected_pixels: set[tuple[int, int]] = set()
         self.cell_size = 10
         self.last_initials = ""
+        self._save_path: Path | None = None
 
         self.undo_stack: list[str] = []
         self.redo_stack: list[str] = []
@@ -188,6 +190,8 @@ class PixelTrackerApp(tk.Tk):
 
         self.bottom = ttk.LabelFrame(root, text="Alle modules - database", style="Card.TLabelframe")
         self.bottom.grid(row=1, column=0, columnspan=3, sticky="nsew", pady=(12, 0))
+        self.bottom.pack_propagate(False)
+        self.bottom.configure(height=220)
 
         self.build_left_column()
         self.build_middle_column()
@@ -205,7 +209,8 @@ class PixelTrackerApp(tk.Tk):
         menubar = tk.Menu(self)
 
         file_menu = tk.Menu(menubar, tearoff=False)
-        file_menu.add_command(label="Opslaan als JSON...", command=self.save_json_as)
+        file_menu.add_command(label="Opslaan", command=self.save, accelerator="Ctrl+S")
+        file_menu.add_command(label="Opslaan als...", command=self.save_json_as)
         file_menu.add_command(label="Laden van JSON...", command=self.load_json_from)
         file_menu.add_separator()
         file_menu.add_command(label="Reparaties exporteren als CSV...", command=self.export_csv)
@@ -390,7 +395,11 @@ class PixelTrackerApp(tk.Tk):
 
     def build_bottom_table(self) -> None:
         cols = ("company", "name", "dim", "sn", "repairs", "open_px", "updated")
-        self.mod_tree = ttk.Treeview(self.bottom, columns=cols, show="headings", height=8)
+
+        tree_frame = ttk.Frame(self.bottom, style="App.TFrame")
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+
+        self.mod_tree = ttk.Treeview(tree_frame, columns=cols, show="headings", height=8)
         self.mod_tree.heading("company", text="Company")
         self.mod_tree.heading("name", text="Naam")
         self.mod_tree.heading("dim", text="Afmeting")
@@ -407,7 +416,11 @@ class PixelTrackerApp(tk.Tk):
         self.mod_tree.column("open_px", width=75, anchor=tk.E)
         self.mod_tree.column("updated", width=110, anchor=tk.W)
 
-        self.mod_tree.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        ybar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.mod_tree.yview)
+        self.mod_tree.configure(yscrollcommand=ybar.set)
+        self.mod_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        ybar.pack(side=tk.RIGHT, fill=tk.Y)
+
         self.mod_tree.bind("<Double-1>", self.on_bottom_module_open)
         self.mod_tree.bind("<Button-3>", self.on_module_tree_context_menu)
         self.mod_tree.bind("<Control-Button-1>", self.on_module_tree_context_menu)
@@ -439,8 +452,9 @@ class PixelTrackerApp(tk.Tk):
         ttk.Button(btns, text="Verwijderen", command=self.delete_selected_repair).pack(side=tk.RIGHT)
 
     def bind_shortcuts(self) -> None:
+        self.bind_all("<Control-s>", lambda _: self.save())
         self.bind_all("<Control-z>", lambda _: self.undo())
-        self.bind_all("<Control-Z>", lambda _: self.redo())
+        self.bind_all("<Control-y>", lambda _: self.redo())
         self.bind_all("<Escape>", lambda _: self.clear_selection())
         self.bind_all("<Control-a>", lambda e: self.quick_add_repair(e, "Pixel", "#e6007e"))
         self.bind_all("<Control-b>", lambda e: self.quick_add_repair(e, "Pad", "#2563eb"))
@@ -491,7 +505,11 @@ class PixelTrackerApp(tk.Tk):
                         status=str(rr.get("status", "Open")),
                         color=str(rr.get("color", "#e6007e")),
                         note=str(rr.get("note", "")),
-                        pixels=[list(map(int, p)) for p in rr.get("pixels", [])],
+                        pixels=[
+                            [int(p[0]), int(p[1])]
+                            for p in rr.get("pixels", [])
+                            if isinstance(p, (list, tuple)) and len(p) >= 2
+                        ],
                     )
                 )
             modules[mid] = Module(
@@ -510,7 +528,11 @@ class PixelTrackerApp(tk.Tk):
         return AppState(activeId=active, modules=modules)
 
     def save_state(self) -> None:
-        STORAGE_FILE.write_text(json.dumps(self.serialize_state(), indent=2), encoding="utf-8")
+        target = self._save_path or STORAGE_FILE
+        try:
+            target.write_text(json.dumps(self.serialize_state(), indent=2), encoding="utf-8")
+        except OSError as exc:
+            messagebox.showwarning("Opslaan mislukt", f"Kon niet opslaan:\n{exc}")
 
     def load_state(self) -> AppState:
         if not STORAGE_FILE.exists():
@@ -520,7 +542,11 @@ class PixelTrackerApp(tk.Tk):
         try:
             payload = json.loads(STORAGE_FILE.read_text(encoding="utf-8"))
             return self.deserialize_state(payload)
-        except Exception:
+        except (json.JSONDecodeError, ValueError, KeyError, TypeError) as exc:
+            messagebox.showerror(
+                "Database fout",
+                f"Kon database niet laden:\n{exc}\n\nStandaard database wordt gebruikt.",
+            )
             return default_state()
 
     @staticmethod
@@ -1249,28 +1275,45 @@ class PixelTrackerApp(tk.Tk):
                 messagebox.showwarning("Geen selectie", "Selecteer minstens een pixel.", parent=win)
                 return
 
-            data = Repair(
-                id=rep.id if rep else uid(),
-                type=type_var.get().strip() or "Pixel",
-                date=in_date.get().strip() or today_iso(),
-                initials=in_initials.get().strip(),
-                status=status_var.get().strip() or "Open",
-                color=color_val.get().strip() or "#e6007e",
-                note=note.get("1.0", tk.END).strip(),
-                pixels=pixels,
-            )
+            rep_type = type_var.get().strip() or "Pixel"
+            rep_date = in_date.get().strip() or today_iso()
+            rep_initials = in_initials.get().strip()
+            rep_status = status_var.get().strip() or "Open"
+            rep_color = color_val.get().strip() or "#e6007e"
+            rep_note = note.get("1.0", tk.END).strip()
 
             self.push_history()
             if rep:
+                data = Repair(
+                    id=rep.id,
+                    type=rep_type,
+                    date=rep_date,
+                    initials=rep_initials,
+                    status=rep_status,
+                    color=rep_color,
+                    note=rep_note,
+                    pixels=pixels,
+                )
                 for idx, old in enumerate(m.repairs):
                     if old.id == rep.id:
                         m.repairs[idx] = data
                         break
+                if data.initials:
+                    self.last_initials = data.initials
             else:
-                m.repairs.append(data)
-
-            if data.initials:
-                self.last_initials = data.initials
+                for px in pixels:
+                    m.repairs.append(Repair(
+                        id=uid(),
+                        type=rep_type,
+                        date=rep_date,
+                        initials=rep_initials,
+                        status=rep_status,
+                        color=rep_color,
+                        note=rep_note,
+                        pixels=[px],
+                    ))
+                if rep_initials:
+                    self.last_initials = rep_initials
 
             self.touch_module(m)
             self.selected_pixels.clear()
@@ -1288,19 +1331,18 @@ class PixelTrackerApp(tk.Tk):
         m = self.active_module()
         if not m or not self.selected_pixels:
             return
-        event.widget = self
         self.push_history()
-        rep = Repair(
-            id=uid(),
-            type=kind,
-            date=today_iso(),
-            initials=self.last_initials,
-            status="Opgelost",
-            color=color,
-            note="",
-            pixels=[[x, y] for x, y in sorted(self.selected_pixels)],
-        )
-        m.repairs.append(rep)
+        for px in sorted(self.selected_pixels):
+            m.repairs.append(Repair(
+                id=uid(),
+                type=kind,
+                date=today_iso(),
+                initials=self.last_initials,
+                status="Opgelost",
+                color=color,
+                note="",
+                pixels=[list(px)],
+            ))
         self.touch_module(m)
         self.selected_pixels.clear()
         self.save_state()
@@ -1322,6 +1364,15 @@ class PixelTrackerApp(tk.Tk):
 
     # ---------- File actions ----------
 
+    def save(self) -> None:
+        if self._save_path:
+            try:
+                self._save_path.write_text(json.dumps(self.serialize_state(), indent=2), encoding="utf-8")
+            except OSError as exc:
+                messagebox.showwarning("Opslaan mislukt", f"Kon niet opslaan:\n{exc}")
+        else:
+            self.save_json_as()
+
     def save_json_as(self) -> None:
         path = filedialog.asksaveasfilename(
             title="Database opslaan",
@@ -1331,7 +1382,8 @@ class PixelTrackerApp(tk.Tk):
         )
         if not path:
             return
-        Path(path).write_text(json.dumps(self.serialize_state(), indent=2), encoding="utf-8")
+        self._save_path = Path(path)
+        self._save_path.write_text(json.dumps(self.serialize_state(), indent=2), encoding="utf-8")
 
     def load_json_from(self) -> None:
         path = filedialog.askopenfilename(title="Database laden", filetypes=[("JSON", "*.json")])
