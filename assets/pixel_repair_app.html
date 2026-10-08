@@ -1662,7 +1662,10 @@
     </div>
 
     <div class="session-tab-panel" data-panel="sessies">
-      <div class="hint" style="font-size:12px;">Sessies, nieuwste eerst. Is een sessie 'actief', dan worden nieuwe reparaties automatisch meegenomen.</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
+        <div class="hint" style="font-size:12px;">Sessies, nieuwste eerst. Is een sessie 'actief', dan worden nieuwe reparaties automatisch meegenomen.</div>
+        <button id="sessionCollapseAllBtn" class="small">Alles inklappen</button>
+      </div>
       <div id="sessionBookmarkList" style="flex:1;overflow-y:auto;border:1px solid var(--border-soft);border-radius:8px;padding:6px 10px;"></div>
     </div>
 
@@ -4365,6 +4368,12 @@
   const sessionsModalOverlay = document.getElementById("sessionsModalOverlay");
 
   function getSessions() { return Array.isArray(state.sessions) ? state.sessions : []; }
+  // Overal nieuwste sessie eerst; sessies zonder createdAt vallen terug op
+  // updatedAt/ts, anders blijft de volgorde van aanmaken staan.
+  function sessionTimeKey(s) { return String((s && (s.createdAt || s.updatedAt || s.ts)) || ""); }
+  function sortSessionsNewestFirst(list) {
+    return list.slice().sort((a, b) => sessionTimeKey(b).localeCompare(sessionTimeKey(a)));
+  }
 
   const ALL_SESSION_ID = '__ALL__';
   const sessionListSort = { key: 'date', dir: 'desc' };
@@ -4656,7 +4665,7 @@
 
   function renderBookmarkTargetSelect() {
     const sel = document.getElementById("sessionTargetSelect");
-    const sessions = getSessions();
+    const sessions = sortSessionsNewestFirst(getSessions());
     sel.innerHTML = '<option value="">— kies sessie —</option>';
     sessions.forEach(s => {
       const opt = document.createElement("option");
@@ -4754,9 +4763,33 @@
     sessionColumnResizeState = null;
   });
 
+  // Inklappen per sessie in de Sessies-tab: stand blijft bewaard (localStorage).
+  const SESSION_COLLAPSED_KEY = 'pixelRepairApp_collapsedSessions_v1';
+  let collapsedSessionCards = null;
+  function getSessionCollapsedSet() {
+    if (collapsedSessionCards) return collapsedSessionCards;
+    let ids = [];
+    try { ids = JSON.parse(localStorage.getItem(SESSION_COLLAPSED_KEY) || '[]') || []; } catch (e) { ids = []; }
+    collapsedSessionCards = new Set(Array.isArray(ids) ? ids : []);
+    return collapsedSessionCards;
+  }
+  function saveSessionCollapsedSet(set) {
+    try { localStorage.setItem(SESSION_COLLAPSED_KEY, JSON.stringify(Array.from(set))); } catch (e) {}
+  }
+  function sessionsAllCollapsed() {
+    const sessions = getSessions();
+    if (sessions.length === 0) return false;
+    const set = getSessionCollapsedSet();
+    return sessions.every(s => set.has(s.id));
+  }
+  function updateSessionCollapseAllLabel() {
+    const btn = document.getElementById("sessionCollapseAllBtn");
+    if (btn) btn.textContent = sessionsAllCollapsed() ? "Alles uitklappen" : "Alles inklappen";
+  }
+
   function renderBookmarkList() {
     const wrap = document.getElementById("sessionBookmarkList");
-    const sessions = getSessions().slice().sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+    const sessions = sortSessionsNewestFirst(getSessions());
     const allRepairs = getAllRepairsFlat();
     let html = "";
     const isAllActive = isAllSession(state.activeSessionId);
@@ -4779,16 +4812,19 @@
       const sModuleCount = getSessionModuleObjs(s).length;
       const sWork = sessionWorkLabel(s);
       const workHint = sWork ? ` &middot; <span title="Pauzes langer dan 3 uur tellen niet mee">${sWork}</span>` : '';
+      const cardCollapsed = getSessionCollapsedSet().has(s.id);
       html += `<div style="padding:10px 12px;border:2px solid ${isActive ? "var(--accent)" : "var(--border-soft)"};border-radius:10px;margin-bottom:10px;background:${isActive ? "var(--active-bg)" : "transparent"};">`;
       html += `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">`;
-      html += `<span><strong style="font-size:14px;cursor:pointer;" title="Klik om te hernoemen" onclick="event.stopPropagation();window.__pixelTrackerRenameSession('${s.id}')">${escapeHtml(s.name)}</strong> <span class="hint" style="font-size:12px;">${getDateStr(s.createdAt)} &middot; ${sModuleCount} module${sModuleCount !== 1 ? "s" : ""} &middot; ${sRepairRows.length} reparatie${sRepairRows.length !== 1 ? "s" : ""}${workHint}</span>${isActive ? ' <span style="color:var(--accent);font-size:12px;">&#9679; actief</span>' : ""}</span>`;
+      html += `<span><button type="button" class="session-quick-toggle" style="vertical-align:middle;margin-right:6px;" data-toggle-card="${s.id}" title="${cardCollapsed ? "Sessie uitklappen" : "Sessie inklappen"}" aria-label="${cardCollapsed ? "Uitklappen" : "Inklappen"}">${cardCollapsed ? "&#9656;" : "&#9662;"}</button><strong style="font-size:14px;cursor:pointer;" title="Klik om te hernoemen" onclick="event.stopPropagation();window.__pixelTrackerRenameSession('${s.id}')">${escapeHtml(s.name)}</strong> <span class="hint" style="font-size:12px;">${getDateStr(s.createdAt)} &middot; ${sModuleCount} module${sModuleCount !== 1 ? "s" : ""} &middot; ${sRepairRows.length} reparatie${sRepairRows.length !== 1 ? "s" : ""}${workHint}</span>${isActive ? ' <span style="color:var(--accent);font-size:12px;">&#9679; actief</span>' : ""}</span>`;
       html += `<div style="display:flex;gap:6px;">`;
       html += `<button class="small" onclick="event.stopPropagation();window.__pixelTrackerSetSession('${s.id}')">${isActive ? "Actief" : "Actief maken"}</button>`;
       html += `<button class="small" onclick="event.stopPropagation();window.__pixelTrackerExportSessionListingPdf('${s.id}')">Export A4</button>`;
       html += `<button class="small" onclick="event.stopPropagation();window.__pixelTrackerRenameSession('${s.id}')">Hernoem</button>`;
       html += `<button class="small danger" onclick="event.stopPropagation();window.__pixelTrackerDeleteSession('${s.id}')">Verwijder</button>`;
       html += `</div></div>`;
-      if (sRepairs.length === 0) {
+      if (cardCollapsed) {
+        // Ingeklapt: alleen de kopregel met naam, datum en tellingen.
+      } else if (sRepairs.length === 0) {
         html += `<div class="hint" style="padding:6px 0;font-size:12px;">Nog geen reparaties in deze sessie.</div>`;
       } else {
         const sortedRepairs = sortSessionRepairs(sRepairs, sessionListSort.key, sessionListSort.dir);
@@ -4851,6 +4887,16 @@
       html += `</div>`;
     });
     wrap.innerHTML = html;
+    updateSessionCollapseAllLabel();
+    wrap.onclick = (e) => {
+      const t = e.target.closest('[data-toggle-card]');
+      if (!t) return;
+      const set = getSessionCollapsedSet();
+      const id = t.dataset.toggleCard;
+      if (set.has(id)) set.delete(id); else set.add(id);
+      saveSessionCollapsedSet(set);
+      renderBookmarkList();
+    };
     document.querySelectorAll('.session-sort-table').forEach(applySessionTableWidths);
     wrap.querySelectorAll('[data-session-sort]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -4858,6 +4904,14 @@
       });
     });
   }
+
+  document.getElementById("sessionCollapseAllBtn").addEventListener("click", () => {
+    const set = getSessionCollapsedSet();
+    if (sessionsAllCollapsed()) set.clear();
+    else getSessions().forEach(s => set.add(s.id));
+    saveSessionCollapsedSet(set);
+    renderBookmarkList();
+  });
 
   // --- Tab: Modules ---
   function renderSessionModulesTab() {
@@ -5278,7 +5332,7 @@
     }
 
     let html = item(ALL_SESSION_ID, "ALL", "Alle modules &amp; reparaties", `${allModuleCount} modules · ${allRepairCount} reparaties`);
-    getSessions().forEach(s => {
+    sortSessionsNewestFirst(getSessions()).forEach(s => {
       const sRepIds = new Set(getSessionRepairIds(s));
       const count = allRepairs.filter(r => (sRepIds.has(r.id) || r.sessionId === s.id) && isRepairRow(r)).length;
       const label = escapeHtml(s.name);
