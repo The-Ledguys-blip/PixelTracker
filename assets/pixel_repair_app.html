@@ -2661,70 +2661,9 @@
   const repairSidebar = document.getElementById('repairSidebar');
   const repairSidebarToggle = document.getElementById('repairSidebarToggle');
 
-  // Inklappen geeft breedte vrij → maak het pixelraster dan passend (fit), zodat
-  // de vrijgekomen ruimte meteen aan het raster gaat. Bij uitklappen zoomen we
-  // terug naar de celgrootte van vóór het fitten. Pas je de zoom zelf aan zolang
-  // de zijbalk ingeklapt is, dan wordt dat terugzetten geschrapt.
-  const SIDEBAR_FIT_RULER_W = 30;  // #rulerLeft in .canvas-grid-wrap
-  const SIDEBAR_FIT_PAD_X = 16;    // padding links/rechts van .canvas-scroll
-  const SIDEBAR_FIT_SPARE = 12;    // scrollbar-gutter + veiligheidsmarge
-  let sidebarZoomBeforeFit = null;
-  let sidebarFitZoom = null;
-  let sidebarFitTimer = null;
-
-  function applySidebarGridFit() {
-    const m = activeModule();
-    const pv = m ? null : getFormPreviewDims();
-    const cols = m ? m.width : (pv ? pv.width : 0);
-    if (!cols || !canvasScroll || !canvasScroll.clientWidth) return 'retry';
-    const zr = document.getElementById('zoomRange');
-    if (!zr) return 'done';
-    const min = parseInt(zr.min, 10) || 2;
-    const max = parseInt(zr.max, 10) || 29;
-    const avail = canvasScroll.clientWidth - SIDEBAR_FIT_PAD_X - SIDEBAR_FIT_RULER_W - SIDEBAR_FIT_SPARE;
-    if (avail <= 0) return 'done';
-    const desired = Math.max(min, Math.min(max, Math.floor(avail / cols)));
-    if (desired === cellSize) {
-      sidebarFitZoom = cellSize;
-      return 'done';
-    }
-    if (sidebarZoomBeforeFit === null) sidebarZoomBeforeFit = cellSize;
-    sidebarFitZoom = desired;
-    cellSize = desired;
-    zr.value = String(cellSize);
-    renderCanvas();
-    return 'done';
-  }
-
-  // Wacht tot de grid-transitie (.18s) klaar is en probeert de fit daarna; zonder
-  // actieve module wordt er kort opnieuw geprobeerd zodat ook een later geladen
-  // raster alsnog gefit wordt.
-  function scheduleSidebarGridFit(delay, attempt) {
-    if (sidebarFitTimer) clearTimeout(sidebarFitTimer);
-    sidebarFitTimer = setTimeout(() => {
-      sidebarFitTimer = null;
-      let res = 'done';
-      try { res = applySidebarGridFit(); } catch (err) { res = 'done'; }
-      const n = attempt || 0;
-      if (res === 'retry' && n < 6) scheduleSidebarGridFit(400, n + 1);
-    }, delay);
-  }
-
-  function restoreSidebarZoomAfterExpand() {
-    if (sidebarFitTimer) { clearTimeout(sidebarFitTimer); sidebarFitTimer = null; }
-    if (sidebarZoomBeforeFit === null) return;
-    if (cellSize !== sidebarFitZoom) {
-      sidebarZoomBeforeFit = null;
-      sidebarFitZoom = null;
-      return;
-    }
-    const zr = document.getElementById('zoomRange');
-    cellSize = sidebarZoomBeforeFit;
-    if (zr) zr.value = String(cellSize);
-    sidebarZoomBeforeFit = null;
-    sidebarFitZoom = null;
-    renderCanvas();
-  }
+  // In- of uitklappen verandert de zoom (celgrootte) niet: de vrijgekomen breedte
+  // gaat naar meer zichtbare pixels — .canvas-scroll groeit mee, dus je ziet
+  // zonder herschaling simpelweg meer kolommen van dezelfde zoom.
 
   function syncRepairSidebarState(forceState) {
     if (!repairMain || !repairSidebar || !repairSidebarToggle) return;
@@ -2737,8 +2676,6 @@
     try {
       localStorage.setItem(REPAIR_SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0');
     } catch (e) {}
-    if (collapsed) scheduleSidebarGridFit(240, 0);
-    else restoreSidebarZoomAfterExpand();
   }
 
   if (repairSidebarToggle) {
