@@ -281,6 +281,7 @@
     width: 28px !important;
     min-width: 28px !important;
     max-width: 28px !important;
+    min-height: 36px !important; /* anders is de hoogte 2px (alleen rand) en knipt overflow:hidden het uitklap-pijltje weg */
     flex: 0 0 28px !important;
     padding: 0 !important;
     border: 1px solid transparent !important;
@@ -517,7 +518,9 @@
   .repair-filters input[type="search"] { flex: 1; min-width: 110px; }
   .repair-filters button.small { padding: 3px 8px; }
 
-  .db-section { margin: 0 18px 40px; }
+  /* "Alle modules — database" onderaan het hoofdscherm: niet meer nodig in het
+     hoofdmenu. De sectie blijft in de bron, alleen verborgen. */
+  .db-section { margin: 0 18px 40px; display: none; }
   .db-section .moduletable-wrap { max-height: 260px; overflow-y: auto; }
 
   .session-tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border); }
@@ -1398,11 +1401,6 @@
   <div class="menu-wrap">
     <button class="menu-trigger" id="sessionsMenuBtn">Sessies ▾</button>
     <div class="menu-dropdown" id="sessionsMenuDropdown">
-      <div class="session-menu-width-controls" aria-label="Categoriebreedte">
-        <button type="button" class="session-width-btn" data-session-width="narrow">Minder breed</button>
-        <button type="button" class="session-width-btn active" data-session-width="normal">Normaal</button>
-        <button type="button" class="session-width-btn" data-session-width="wide">Breder</button>
-      </div>
       <button id="menuManageSessions">Sessie beheer...</button>
       <hr>
       <div id="sessionQuickList" class="session-quick-list"></div>
@@ -5237,40 +5235,9 @@
   const SESSION_MENU_CUSTOM_MIN = 180;
   const SESSION_MENU_CUSTOM_MAX = 420;
 
-  function ensureSessionMenuControls() {
-    const dropdownEl = document.getElementById('sessionsMenuDropdown');
-    if (!dropdownEl) return;
-    if (dropdownEl.querySelector('.session-menu-width-controls')) return;
-
-    const controls = document.createElement('div');
-    controls.className = 'session-menu-width-controls';
-    controls.innerHTML = `
-      <div class="session-width-buttons">
-        <button type="button" class="session-width-btn active" data-session-width="wide">Breed</button>
-      </div>
-      <div class="session-width-custom">
-        <span>Handmatig</span>
-        <input id="sessionMenuCustomSlider" type="range" min="${SESSION_MENU_CUSTOM_MIN}" max="${SESSION_MENU_CUSTOM_MAX}" step="10" value="320" />
-        <span id="sessionMenuCustomValue" class="session-width-custom-value">320</span>
-      </div>
-    `;
-    const quickList = dropdownEl.querySelector('#sessionQuickList');
-    dropdownEl.insertBefore(controls, quickList || null);
-
-    controls.querySelectorAll('.session-width-btn').forEach(button => {
-      button.addEventListener('click', () => applySessionMenuWidth(button.dataset.sessionWidth || 'normal'));
-    });
-
-    const slider = document.getElementById('sessionMenuCustomSlider');
-    const valueEl = document.getElementById('sessionMenuCustomValue');
-    if (slider && valueEl) {
-      slider.addEventListener('input', (e) => {
-        const next = Number(e.target.value);
-        valueEl.textContent = String(next);
-        applySessionMenuWidth('custom', next);
-      });
-    }
-  }
+  // NB: de breedte-knoppen ("Minder breed" / "Normaal" / "Breder") en de
+  // handmatige breedteslider zijn uit het Sessies-menu verwijderd; de opgeslagen
+  // breedte wordt nog steeds toegepast via applySessionMenuWidth().
 
   function applySessionMenuWidth(mode, customWidth = null) {
     const keys = Object.keys(SESSION_MENU_WIDTHS);
@@ -5298,7 +5265,6 @@
   }
 
   function restoreSessionMenuWidth() {
-    ensureSessionMenuControls();
     try {
       const savedMode = localStorage.getItem('pixeltracker-session-menu-width-mode') || 'wide';
       const saved = Number(localStorage.getItem('pixeltracker-session-menu-width'));
@@ -5334,9 +5300,6 @@
     renderSessionQuickList();
   }
 
-  document.querySelectorAll('.session-width-btn').forEach(button => {
-    button.addEventListener('click', () => applySessionMenuWidth(button.dataset.sessionWidth || 'normal'));
-  });
   restoreSessionMenuWidth();
 
   const collapsedSessionMenuIds = new Set();

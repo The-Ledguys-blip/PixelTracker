@@ -99,6 +99,21 @@ def base_path() -> Path:
 
 
 def html_file() -> Path:
+    # PIXELTRACKER_HTML: leg de HTML-bron vast (dev-live). Zo kan de geïnstalleerde
+    # app de HTML uit de repo laden, zodat wijzigingen zichtbaar zijn zonder opnieuw
+    # te bouwen of te installeren. Geldig pad → direct gebruiken; ongeldige waarde →
+    # waarschuwen en verder zoeken zoals normaal.
+    override = os.environ.get("PIXELTRACKER_HTML", "").strip()
+    if override:
+        override_path = Path(override).expanduser()
+        if override_path.is_file():
+            return override_path
+        print(
+            f"Waarschuwing: PIXELTRACKER_HTML wijst naar een bestand dat niet bestaat: "
+            f"{override_path} — normale zoektocht wordt gebruikt.",
+            file=sys.stderr,
+        )
+
     candidates = [
         base_path() / "pixel_repair_app.html",
         base_path().parent / "assets" / "pixel_repair_app.html",

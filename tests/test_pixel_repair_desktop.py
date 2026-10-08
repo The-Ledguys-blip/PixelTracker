@@ -1,4 +1,5 @@
 import importlib.util
+import os
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -31,6 +32,30 @@ class HtmlPathTests(unittest.TestCase):
 
         self.assertTrue(html_path.exists(), msg=f"Expected HTML asset at {html_path}")
         self.assertEqual(html_path.name, "pixel_repair_app.html")
+
+    def test_html_file_honours_pixeltracker_html_override(self) -> None:
+        import tempfile
+
+        module = self.load_desktop_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            custom = Path(tmp) / "live.html"
+            custom.write_text("<html></html>", encoding="utf-8")
+            with patch.dict(os.environ, {"PIXELTRACKER_HTML": str(custom)}):
+                self.assertEqual(module.html_file(), custom)
+
+    def test_html_file_falls_back_when_pixeltracker_html_is_missing(self) -> None:
+        import io
+        from contextlib import redirect_stderr
+
+        module = self.load_desktop_module()
+        missing = "/definitely/not/here/pixel_repair_app.html"
+        stderr = io.StringIO()
+        with patch.dict(os.environ, {"PIXELTRACKER_HTML": missing}), redirect_stderr(stderr):
+            html_path = module.html_file()
+
+        self.assertTrue(html_path.exists())
+        self.assertEqual(html_path.name, "pixel_repair_app.html")
+        self.assertIn("PIXELTRACKER_HTML", stderr.getvalue())
 
     def test_macos_app_data_path(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
