@@ -26,7 +26,7 @@ PixelTracker-repo/
 ├── build/
 │   ├── PixelTracker.spec           # PyInstaller spec (macOS)
 │   ├── PixelTracker-Windows.spec   # PyInstaller spec (Windows)
-│   ├── version_info_windows.txt    # Windows versie-info (3.0.14 Beta)
+│   ├── version_info_windows.txt    # Windows versie-info (3.0.15 Beta)
 │   └── PixelTracker/               # PyInstaller build-output
 ├── Desktop/                        # Leeg (verwijst naar originele Desktop-bron)
 ├── dist/                           # Build-output (installers/exe)
@@ -133,9 +133,9 @@ Oudere zelfstandige Tkinter-app met vergelijkbare functionaliteit (zonder web-fr
 | Bestand | Doel |
 |---|---|
 | `requirements.txt` | PyQt6, PyQt6-WebEngine, Pillow, PyInstaller, reportlab |
-| `build/PixelTracker.spec` | macOS PyInstaller-configuratie (versie 3.0.14) |
+| `build/PixelTracker.spec` | macOS PyInstaller-configuratie (versie 3.0.15) |
 | `build/PixelTracker-Windows.spec` | Windows PyInstaller-configuratie |
-| `build/version_info_windows.txt` | Windows versie-info: 3.0.14 Beta |
+| `build/version_info_windows.txt` | Windows versie-info: 3.0.15 Beta |
 | `build_windows.ps1` | Volledige Windows-build: venv → PyInstaller → Inno Setup → `.exe` |
 | `build_msi.ps1` | MSI-build via WiX Toolset (`heat.exe`, suppressions ICE38/64/91) |
 | `installer/PixelTracker-Windows.iss` | Inno Setup: per-user install met `PrivilegesRequired=lowest` |
@@ -167,8 +167,8 @@ Oudere zelfstandige Tkinter-app met vergelijkbare functionaliteit (zonder web-fr
 
 | Versie | Laag | Waar |
 |---|---|---|
-| `3.0.14 Beta` | Windows-installer | `build_windows.ps1`, `version_info_windows.txt`, `.iss`, `.wxs` |
-| `3.0.14` | macOS spec + HTML-build | `build/PixelTracker.spec`, `const BUILD_VERSION = 'V3.0.14 Beta'` in HTML |
+| `3.0.15 Beta` | Windows-installer | `build_windows.ps1`, `version_info_windows.txt`, `.iss`, `.wxs` |
+| `3.0.15` | macOS spec + HTML-build | `build/PixelTracker.spec`, `const BUILD_VERSION = 'V3.0.15 Beta'` in HTML |
 
 ---
 
