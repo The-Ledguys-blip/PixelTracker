@@ -4,7 +4,7 @@
     Id="*"
     Name="PixelTracker"
     Language="1043"
-    Version="3.0.15"
+    Version="3.0.16"
     Manufacturer="PixelTracker"
     UpgradeCode="4DF480CF-428E-4FC6-B03D-0C71D27AC9C7">
     <Package InstallerVersion="500" Compressed="yes" InstallScope="perUser" Platform="x64" />
