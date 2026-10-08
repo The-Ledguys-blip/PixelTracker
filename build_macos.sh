@@ -28,9 +28,17 @@ sed -i '' "s/${CUR_VERSION} Beta/${NEW_VERSION} Beta/" build/version_info_window
 sed -i '' "s/Version=\"${CUR_VERSION}\"/Version=\"${NEW_VERSION}\"/" installer/PixelTracker-Windows.wxs
 sed -i '' "s/#define AppVersion \"${CUR_VERSION}\"/#define AppVersion \"${NEW_VERSION}\"/" installer/PixelTracker-Windows.iss
 sed -i '' "s/PixelTracker_V${CUR_VERSION}_Beta/PixelTracker_V${NEW_VERSION}_Beta/" installer/PixelTracker-Windows.iss
-# update visible UI build badge in the app shell even when the text format is plain or beta-style
-sed -i '' "s/Build V[0-9][0-9.]*\( Beta\)*/Build V${NEW_VERSION}/" assets/pixel_repair_app.html
-sed -i '' "s/'V[0-9][0-9.]*\( Beta\)*'/'V${NEW_VERSION}'/" assets/pixel_repair_app.html
+# Zichtbare build-badge + BUILD_VERSION in de app-shell. Het Beta-label blijft
+# behouden: de HTML-contracttests verwachten "V<versie> Beta".
+sed -i '' "s/Build V[0-9][0-9.]*\( Beta\)*/Build V${NEW_VERSION} Beta/" assets/pixel_repair_app.html
+sed -i '' "s/'V[0-9][0-9.]*\( Beta\)*'/'V${NEW_VERSION} Beta'/" assets/pixel_repair_app.html
+
+# Alle overige plekken waar de versie letterlijk staat: MSI/Inno-uitvoernamen,
+# CI-workflow en documentatie. Zonder deze regels lopen die achter en falen de
+# installer-contracttests na een bump.
+for f in build_msi.ps1 build_windows.ps1 README.md REPO_MAP.md ".github/workflows/build-windows.yml"; do
+  sed -i '' "s/${CUR_VERSION}/${NEW_VERSION}/g" "$f"
+done
 
 VERSION="${NEW_VERSION}"
 APP_NAME="PixelTracker"
