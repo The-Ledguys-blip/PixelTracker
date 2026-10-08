@@ -1415,7 +1415,7 @@
 <header class="app-header">
   <h1>PixelTracker</h1>
   <div class="header-meta">
-    <span id="buildVersionBadge" class="build-badge">Build V3.0.13 Beta</span>
+    <span id="buildVersionBadge" class="build-badge">Build V3.0.14 Beta</span>
     <span class="save-status" title="Opslagstatus">
       <span id="currentSaveStatusDot" class="save-status-dot unsaved" aria-hidden="true"></span>
       <span id="currentSaveName" class="hint" style="margin:0; white-space:nowrap;">Bestand: nog niet opgeslagen</span>
@@ -1866,7 +1866,7 @@
 (function() {
   const STORAGE_KEY = 'pixelRepairApp_v2';
   // Bump this on every release update (V2.1, V2.2, V2.3, ...).
-    const BUILD_VERSION = 'V3.0.13 Beta';
+    const BUILD_VERSION = 'V3.0.14 Beta';
   const MANUAL_SAVE_SNAPSHOT_KEY = 'pixelRepairApp_lastManualSaveSnapshot_v1';
   const RECENT_FILES_KEY = 'pixelRepairApp_recentFiles_v1';
   const CURRENT_SAVE_NAME_KEY = 'pixelRepairApp_currentSaveName_v1';
@@ -2663,6 +2663,71 @@
   const repairSidebar = document.getElementById('repairSidebar');
   const repairSidebarToggle = document.getElementById('repairSidebarToggle');
 
+  // Inklappen geeft breedte vrij → maak het pixelraster dan passend (fit), zodat
+  // de vrijgekomen ruimte meteen aan het raster gaat. Bij uitklappen zoomen we
+  // terug naar de celgrootte van vóór het fitten. Pas je de zoom zelf aan zolang
+  // de zijbalk ingeklapt is, dan wordt dat terugzetten geschrapt.
+  const SIDEBAR_FIT_RULER_W = 30;  // #rulerLeft in .canvas-grid-wrap
+  const SIDEBAR_FIT_PAD_X = 16;    // padding links/rechts van .canvas-scroll
+  const SIDEBAR_FIT_SPARE = 12;    // scrollbar-gutter + veiligheidsmarge
+  let sidebarZoomBeforeFit = null;
+  let sidebarFitZoom = null;
+  let sidebarFitTimer = null;
+
+  function applySidebarGridFit() {
+    const m = activeModule();
+    const pv = m ? null : getFormPreviewDims();
+    const cols = m ? m.width : (pv ? pv.width : 0);
+    if (!cols || !canvasScroll || !canvasScroll.clientWidth) return 'retry';
+    const zr = document.getElementById('zoomRange');
+    if (!zr) return 'done';
+    const min = parseInt(zr.min, 10) || 2;
+    const max = parseInt(zr.max, 10) || 29;
+    const avail = canvasScroll.clientWidth - SIDEBAR_FIT_PAD_X - SIDEBAR_FIT_RULER_W - SIDEBAR_FIT_SPARE;
+    if (avail <= 0) return 'done';
+    const desired = Math.max(min, Math.min(max, Math.floor(avail / cols)));
+    if (desired === cellSize) {
+      sidebarFitZoom = cellSize;
+      return 'done';
+    }
+    if (sidebarZoomBeforeFit === null) sidebarZoomBeforeFit = cellSize;
+    sidebarFitZoom = desired;
+    cellSize = desired;
+    zr.value = String(cellSize);
+    renderCanvas();
+    return 'done';
+  }
+
+  // Wacht tot de grid-transitie (.18s) klaar is en probeert de fit daarna; zonder
+  // actieve module wordt er kort opnieuw geprobeerd zodat ook een later geladen
+  // raster alsnog gefit wordt.
+  function scheduleSidebarGridFit(delay, attempt) {
+    if (sidebarFitTimer) clearTimeout(sidebarFitTimer);
+    sidebarFitTimer = setTimeout(() => {
+      sidebarFitTimer = null;
+      let res = 'done';
+      try { res = applySidebarGridFit(); } catch (err) { res = 'done'; }
+      const n = attempt || 0;
+      if (res === 'retry' && n < 6) scheduleSidebarGridFit(400, n + 1);
+    }, delay);
+  }
+
+  function restoreSidebarZoomAfterExpand() {
+    if (sidebarFitTimer) { clearTimeout(sidebarFitTimer); sidebarFitTimer = null; }
+    if (sidebarZoomBeforeFit === null) return;
+    if (cellSize !== sidebarFitZoom) {
+      sidebarZoomBeforeFit = null;
+      sidebarFitZoom = null;
+      return;
+    }
+    const zr = document.getElementById('zoomRange');
+    cellSize = sidebarZoomBeforeFit;
+    if (zr) zr.value = String(cellSize);
+    sidebarZoomBeforeFit = null;
+    sidebarFitZoom = null;
+    renderCanvas();
+  }
+
   function syncRepairSidebarState(forceState) {
     if (!repairMain || !repairSidebar || !repairSidebarToggle) return;
     const collapsed = typeof forceState === 'boolean' ? forceState : repairSidebar.classList.contains('collapsed');
@@ -2674,6 +2739,8 @@
     try {
       localStorage.setItem(REPAIR_SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0');
     } catch (e) {}
+    if (collapsed) scheduleSidebarGridFit(240, 0);
+    else restoreSidebarZoomAfterExpand();
   }
 
   if (repairSidebarToggle) {
