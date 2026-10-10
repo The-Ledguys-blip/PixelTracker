@@ -530,6 +530,21 @@
   .badge.current { background: var(--accent); color: #fff; }
 
   .stats { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .stats-block { margin-bottom: 12px; }
+  .stats-block .stats { margin-bottom: 0; }
+  .stats-toggle {
+    display: flex; align-items: center; width: 100%; gap: 8px;
+    background: transparent; border: none; border-bottom: 1px solid var(--border-soft);
+    color: var(--text-muted); font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .4px; padding: 2px 2px 6px; margin: 0; cursor: pointer; text-align: left;
+  }
+  .stats-toggle:hover { color: var(--text); }
+  .stats-toggle-icon { margin-left: auto; font-size: 12px; line-height: 1; transition: transform .15s ease; }
+  .stats-block:not(.collapsed) .stats-toggle { margin-bottom: 10px; }
+  .stats-block.collapsed .stats { display: none; }
+  .stats-block.collapsed .stats-toggle { border-bottom-color: transparent; }
+  .stats-block.collapsed .stats-toggle-icon { transform: rotate(-90deg); }
+  #centerPanel.stats-collapsed .canvas-scroll { max-height: calc(100vh - 250px); }
   .stat { background: var(--chip-bg); border: 1px solid var(--border-soft); border-radius: 8px; padding: 7px 10px; min-width: 70px; }
   .stat .num { font-size: 16px; font-weight: 700; }
   .stat .label { font-size: 10px; color: var(--text-muted); }
@@ -1580,7 +1595,7 @@
   </div>
 
   <!-- MIDDLE: canvas + legend -->
-  <div class="panel">
+  <div class="panel" id="centerPanel">
     <div class="toolbar">
       <div>
         <div class="module-title" id="moduleTitle">Geen module geselecteerd</div>
@@ -1594,7 +1609,10 @@
 
     <div class="hint" style="margin-bottom:10px;">Klik en sleep voor een blokselectie · shift+klik voegt losse pixels toe · <strong>← ↑ → ↓</strong> = geselecteerde pixel verplaatsen · <strong>Ctrl+1</strong> = Nieuwe Pixel gezet · <strong>Ctrl+2</strong> = Pad Paper Gebruikt · <strong>Ctrl+3</strong> = Trace gemaakt · <strong>Ctrl+4</strong> = Notitie toevoegen · <strong>Esc</strong> = selectie opheffen · <strong>Ctrl+Z</strong> = ongedaan maken · <strong>Ctrl+Shift+Z</strong> = opnieuw</div>
 
-    <div class="stats" id="statsRow"></div>
+    <div class="stats-block" id="statsBlock">
+      <button type="button" id="statsToggle" class="stats-toggle" title="Statistieken inklappen" aria-label="Statistieken inklappen">Statistieken<span class="stats-toggle-icon" aria-hidden="true">&#9662;</span></button>
+      <div class="stats" id="statsRow"></div>
+    </div>
 
     <div class="canvas-scroll" id="canvasScroll">
       <div class="canvas-grid-wrap" id="canvasGridWrap">
@@ -2775,6 +2793,39 @@
     syncRepairSidebarState(storedCollapsed);
   } catch (e) {
     syncRepairSidebarState(false);
+  }
+
+  // ---------- Statistieken in-/uitklappen (middenkolom) ----------
+  // Zelfde idee als de reparatie-zijbalk: ingeklapt blijft alleen de dunne
+  // kopregel "Statistieken" over. De vrijgekomen hoogte gaat naar het
+  // pixelraster (.canvas-scroll groeit mee), zonder de zoom te veranderen.
+  const STATS_BLOCK_COLLAPSED_KEY = 'pixelRepairApp_statsCollapsed_v1';
+  const centerPanelEl = document.getElementById('centerPanel');
+  const statsBlockEl = document.getElementById('statsBlock');
+  const statsToggleEl = document.getElementById('statsToggle');
+
+  function syncStatsState(forceState) {
+    if (!statsBlockEl || !statsToggleEl) return;
+    const collapsed = typeof forceState === 'boolean' ? forceState : statsBlockEl.classList.contains('collapsed');
+    statsBlockEl.classList.toggle('collapsed', collapsed);
+    if (centerPanelEl) centerPanelEl.classList.toggle('stats-collapsed', collapsed);
+    statsToggleEl.title = collapsed ? 'Statistieken uitklappen' : 'Statistieken inklappen';
+    statsToggleEl.setAttribute('aria-label', collapsed ? 'Statistieken uitklappen' : 'Statistieken inklappen');
+    try {
+      localStorage.setItem(STATS_BLOCK_COLLAPSED_KEY, collapsed ? '1' : '0');
+    } catch (e) {}
+  }
+
+  if (statsToggleEl) {
+    statsToggleEl.addEventListener('click', () => {
+      syncStatsState(!statsBlockEl.classList.contains('collapsed'));
+    });
+  }
+
+  try {
+    syncStatsState(localStorage.getItem(STATS_BLOCK_COLLAPSED_KEY) === '1');
+  } catch (e) {
+    syncStatsState(false);
   }
 
   let pendingDatabaseDownloadName = null;
@@ -6435,6 +6486,13 @@
   }
 
   // ---------- Stats ----------
+  // Verberg het hele statistiekenblok (kopregel inbegrepen) zolang er niets te
+  // tonen is; anders blijft een lege "Statistieken"-balk staan.
+  function setStatsBlockVisible(visible) {
+    const el = document.getElementById('statsBlock');
+    if (el) el.style.display = visible ? '' : 'none';
+  }
+
   function renderStats(force) {
     const m = activeModule();
     const row = document.getElementById('statsRow');
@@ -6445,9 +6503,9 @@
     const visibleRepairs = repairs || [];
     const countedRepairs = activeSession ? getSessionFilteredRepairs(visibleRepairs, activeSession) : visibleRepairs;
     let sessRepairs = countedRepairs;
-    if (sessRepairs.length === 0) { row.innerHTML = ''; renderCacheStatsSig = signature; return; }
+    if (sessRepairs.length === 0) { row.innerHTML = ''; setStatsBlockVisible(false); renderCacheStatsSig = signature; return; }
     sessRepairs = sessRepairs.filter(isRepairRow);
-    if (sessRepairs.length === 0) { row.innerHTML = ''; renderCacheStatsSig = signature; return; }
+    if (sessRepairs.length === 0) { row.innerHTML = ''; setStatsBlockVisible(false); renderCacheStatsSig = signature; return; }
     const totalPx = sessRepairs.reduce((s, r) => s + (Array.isArray(r.pixels) ? r.pixels.length : 0), 0);
     const open = sessRepairs.filter(r => r.status === 'Open').reduce((s, r) => s + (Array.isArray(r.pixels) ? r.pixels.length : 0), 0);
 
@@ -6500,6 +6558,7 @@
         <div class="sb-col"><div class="sb-title">Per gebruiker</div>${userRows}</div>
       </div>
     `;
+    setStatsBlockVisible(true);
     renderCacheStatsSig = signature;
   }
 
