@@ -16,11 +16,11 @@ VSVersionInfo(
         [
           StringStruct('CompanyName', 'PixelTracker'),
           StringStruct('FileDescription', 'PixelTracker Beta'),
-          StringStruct('FileVersion', '3.0.22.0'),
+          StringStruct('FileVersion', '3.0.23.0'),
           StringStruct('InternalName', 'PixelTracker'),
           StringStruct('OriginalFilename', 'PixelTracker.exe'),
           StringStruct('ProductName', 'PixelTracker'),
-          StringStruct('ProductVersion', '3.0.22 Beta'),
+          StringStruct('ProductVersion', '3.0.23 Beta'),
         ],
       )
     ]),
