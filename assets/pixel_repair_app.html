@@ -580,6 +580,7 @@
   }
   .session-tab-btn:hover { background: var(--hover-bg); color: var(--text); }
   .session-tab-btn.active { color: var(--accent); border-color: var(--border); background: var(--active-bg); }
+  .session-return-badge { color: #e8842c; font-weight: 600; font-size: 12px; white-space: nowrap; }
   .session-tab-panel { display: none; flex: 1; min-height: 0; flex-direction: column; gap: 10px; margin-top: 12px; }
   .session-tab-panel.active { display: flex; }
   .session-repair-row {
@@ -5011,10 +5012,14 @@
       const sModuleCount = getSessionModuleObjs(s).length;
       const sWork = sessionWorkLabel(s);
       const workHint = sWork ? ` &middot; <span title="Pauzes langer dan 3 uur tellen niet mee">${sWork}</span>` : '';
+      const sReturns = computeSessionReturns(s);
+      const returnBadge = sReturns.length
+        ? ` <span class="session-return-badge" title="Teruggekomen op dezelfde pixel: ${escapeHtml(sReturns.map(r => r.sn || r.name).join(', '))}">&#8635; Teruggekomen${sReturns.length > 1 ? ' (' + sReturns.length + ')' : ''}</span>`
+        : '';
       const cardCollapsed = getSessionCollapsedSet().has(s.id);
       html += `<div style="padding:10px 12px;border:2px solid ${isActive ? "var(--accent)" : "var(--border-soft)"};border-radius:10px;margin-bottom:10px;background:${isActive ? "var(--active-bg)" : "transparent"};">`;
       html += `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">`;
-      html += `<span><button type="button" class="session-quick-toggle" style="vertical-align:middle;margin-right:6px;" data-toggle-card="${s.id}" title="${cardCollapsed ? "Sessie uitklappen" : "Sessie inklappen"}" aria-label="${cardCollapsed ? "Uitklappen" : "Inklappen"}">${cardCollapsed ? "&#9654;" : "&#9660;"}</button><strong style="font-size:14px;cursor:pointer;" title="Klik om te hernoemen" onclick="event.stopPropagation();window.__pixelTrackerRenameSession('${s.id}')">${escapeHtml(s.name)}</strong> <span class="hint" style="font-size:12px;">${getDateStr(s.createdAt)}${sessionClock(s) ? ' ' + sessionClock(s) : ''} &middot; ${sModuleCount} module${sModuleCount !== 1 ? "s" : ""} &middot; ${sRepairRows.length} reparatie${sRepairRows.length !== 1 ? "s" : ""}${workHint}</span>${isActive ? ' <span style="color:var(--accent);font-size:12px;">&#9679; actief</span>' : ""}</span>`;
+      html += `<span><button type="button" class="session-quick-toggle" style="vertical-align:middle;margin-right:6px;" data-toggle-card="${s.id}" title="${cardCollapsed ? "Sessie uitklappen" : "Sessie inklappen"}" aria-label="${cardCollapsed ? "Uitklappen" : "Inklappen"}">${cardCollapsed ? "&#9654;" : "&#9660;"}</button><strong style="font-size:14px;cursor:pointer;" title="Klik om te hernoemen" onclick="event.stopPropagation();window.__pixelTrackerRenameSession('${s.id}')">${escapeHtml(s.name)}</strong> <span class="hint" style="font-size:12px;">${getDateStr(s.createdAt)}${sessionClock(s) ? ' ' + sessionClock(s) : ''} &middot; ${sModuleCount} module${sModuleCount !== 1 ? "s" : ""} &middot; ${sRepairRows.length} reparatie${sRepairRows.length !== 1 ? "s" : ""}${workHint}</span>${returnBadge}${isActive ? ' <span style="color:var(--accent);font-size:12px;">&#9679; actief</span>' : ""}</span>`;
       html += `<div style="display:flex;gap:6px;">`;
       html += `<button class="small" onclick="event.stopPropagation();window.__pixelTrackerSetSession('${s.id}')">${isActive ? "Actief" : "Actief maken"}</button>`;
       html += `<button class="small" onclick="event.stopPropagation();window.__pixelTrackerExportSessionListingPdf('${s.id}')">Export A4</button>`;
