@@ -25,8 +25,8 @@ except Exception:
 
 
 APP_TITLE = "PixelTracker"
-WINDOW_WIDTH = 1920
-WINDOW_HEIGHT = 1200
+WINDOW_WIDTH = 3840
+WINDOW_HEIGHT = 2400
 
 # Wachtruimte tussen een echte toetsaanslag/klik en het tonen van een native
 # paneel. Een paneel dat DIRECT (binnen ~0,5s) opent na echte invoer sluit
@@ -1290,13 +1290,12 @@ def main() -> int:
     if icon.exists():
         app.setWindowIcon(QIcon(str(icon.resolve())))
 
-    # Zorg dat het venster binnen het zichtbare scherm valt op multi-monitor setups.
-    # availableGeometry houdt al rekening met menubalk en Dock; met een kleine marge
-    # vult het venster het beschikbare scherm zo volledig mogelijk (geen fullscreen).
+    # Vul het beschikbare scherm zo volledig mogelijk: availableGeometry houdt al
+    # rekening met de menubalk en het Dock, dus dit is geen fullscreen-modus maar
+    # een venster dat tot aan de schermranden loopt (WINDOW_* zijn ruime maxima).
     screen_geo = QGuiApplication.primaryScreen().availableGeometry()
-    margin = 16
-    width = min(WINDOW_WIDTH, screen_geo.width() - margin)
-    height = min(WINDOW_HEIGHT, screen_geo.height() - margin)
+    width = min(WINDOW_WIDTH, screen_geo.width())
+    height = min(WINDOW_HEIGHT, screen_geo.height())
 
     page = persistent_html_file()
     win = PixelTrackerWindow(page, auto_sample_export=args.sample_export)
