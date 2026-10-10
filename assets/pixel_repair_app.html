@@ -588,6 +588,27 @@
   .session-return-head { color: #e8842c; font-weight: 700; font-size: 13px; margin-bottom: 6px; }
   .session-tab-panel { display: none; flex: 1; min-height: 0; flex-direction: column; gap: 10px; margin-top: 12px; }
   .session-tab-panel.active { display: flex; }
+  /* Hoofd-tabbladen: Home / Sessie */
+  .app-tabs {
+    display: flex; gap: 4px; align-items: flex-end;
+    background: var(--panel-bg); border-bottom: 1px solid var(--border);
+    padding: 4px 10px 0; position: relative; z-index: 29;
+  }
+  .app-tab-btn {
+    background: transparent; border: 1px solid transparent; border-bottom: none;
+    padding: 8px 20px; font-size: 13px; font-weight: 600; color: var(--text-muted);
+    border-radius: 7px 7px 0 0; cursor: pointer; margin-bottom: -1px;
+  }
+  .app-tab-btn:hover { background: var(--hover-bg); color: var(--text); }
+  .app-tab-btn.active { color: var(--accent); background: var(--active-bg); border-color: var(--border); }
+  .app-view[hidden] { display: none !important; }
+  #sessionsView { display: block; }
+  #sessionsView .session-view-inner {
+    display: flex; flex-direction: column;
+    height: calc(100vh - 112px); box-sizing: border-box;
+    padding: 16px 24px 18px; max-width: 1500px; margin: 0 auto; width: 100%;
+    font-size: 14px;
+  }
   .session-repair-row {
     display: flex; align-items: center; gap: 10px; padding: 6px 4px;
     font-size: 12.5px; cursor: pointer; border-bottom: 1px solid var(--border-soft);
@@ -1516,8 +1537,14 @@
     </div>
   </div>
 </div>
+<div class="app-tabs" id="appTabs">
+  <button type="button" class="app-tab-btn active" data-app-tab="home">Home</button>
+  <button type="button" class="app-tab-btn" data-app-tab="sessie">Sessie</button>
+</div>
+
 <input type="file" id="jsonFileInput" accept=".ptdb,.json,application/json" style="display:none">
 
+<div id="homeView" class="app-view">
 <header class="app-header">
   <h1>PixelTracker</h1>
   <div class="header-meta">
@@ -1677,6 +1704,7 @@
 </div>
 
 <footer class="app-footer">PixelTracker — gegevens worden lokaal in deze browser bewaard</footer>
+</div>
 
 <div id="printExportRoot"></div>
 
@@ -1743,9 +1771,9 @@
   </div>
 </div>
 
-<!-- Sessies beheer modal -->
-<div class="modal-overlay" id="sessionsModalOverlay">
-  <div class="modal" style="width:1400px;max-width:96vw;max-height:92vh;display:flex;flex-direction:column;font-size:14px;padding:24px 28px;">
+<!-- Sessies beheer weergave -->
+<div class="app-view" id="sessionsView" hidden>
+  <div class="session-view-inner">
     <h3 style="font-size:18px;margin-bottom:10px;">Sessies</h3>
     <div class="session-tabs">
       <button class="session-tab-btn active" data-tab="reparaties">Reparaties</button>
@@ -1784,7 +1812,7 @@
 
     <div class="modal-actions">
       <div class="spacer"></div>
-      <button id="sessionsModalClose">Sluiten</button>
+      <button id="sessionsModalClose">&#8592; Terug naar Home</button>
     </div>
   </div>
 </div>
@@ -4507,7 +4535,7 @@
   });
 
   // ---------- Sessies ----------
-  const sessionsModalOverlay = document.getElementById("sessionsModalOverlay");
+  const sessionsView = document.getElementById("sessionsView");
 
   function getSessions() { return Array.isArray(state.sessions) ? state.sessions : []; }
   // Overal nieuwste sessie eerst; sessies zonder createdAt vallen terug op
@@ -5758,19 +5786,33 @@
     };
   }
 
+  // Hoofd-tabbladen (Home / Sessie). Beide weergaven blijven in de DOM staan,
+  // zodat wisselen nooit de scrollpositie, actieve sub-tab of module verliest.
+  let currentAppTab = "home";
+  function switchAppTab(name) {
+    currentAppTab = name === "sessie" ? "sessie" : "home";
+    document.querySelectorAll(".app-tab-btn").forEach(b => b.classList.toggle("active", b.dataset.appTab === currentAppTab));
+    const homeView = document.getElementById("homeView");
+    if (homeView) homeView.hidden = currentAppTab !== "home";
+    if (sessionsView) sessionsView.hidden = currentAppTab !== "sessie";
+    document.body.classList.remove("modal-scroll-lock");
+  }
   function openSessionsManager() {
     renderSessionRepairsTab();
     renderBookmarkList();
     renderSessionModulesTab();
     renderBookmarkTargetSelect();
-    setSessionTab("reparaties");
-    sessionsModalOverlay.classList.add("show");
-    document.body.classList.add("modal-scroll-lock");
+    switchAppTab("sessie");
   }
   function closeSessionsManager() {
-    sessionsModalOverlay.classList.remove("show");
-    document.body.classList.remove("modal-scroll-lock");
+    switchAppTab("home");
   }
+  document.querySelectorAll(".app-tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.appTab === "sessie") openSessionsManager();
+      else switchAppTab("home");
+    });
+  });
 
   // Toon een reparatie uit Sessiebeheer in het hoofdscherm: activeer de module,
   // sluit het venster en scroll/highlight naar de pixel(s) van de reparatie.
@@ -5792,9 +5834,6 @@
     sessionsMenuBtnEl.classList.remove("open");
   });
   document.getElementById("sessionsModalClose").addEventListener("click", closeSessionsManager);
-  document.getElementById("sessionsModalOverlay").addEventListener("click", (e) => {
-    if (e.target.id === "sessionsModalOverlay") closeSessionsManager();
-  });
 
   const quickEditModalOverlay = document.getElementById('quickEditModalOverlay');
   const quickEditModalTitle = document.getElementById('quickEditModalTitle');
