@@ -5113,7 +5113,7 @@
             <tbody>
         `;
         sortedRepairs.forEach(r => {
-          html += `<tr style="border-top:1px solid var(--border-soft);font-size:12px;">`;
+          html += `<tr data-repair-id="${r.id}" data-module-id="${r._moduleId}" title="Dubbelklik om in het hoofdscherm te tonen" style="border-top:1px solid var(--border-soft);font-size:12px;cursor:pointer;">`;
           html += `<td data-col-key="sn" style="width:${widths.sn}px;min-width:${widths.sn}px;max-width:${widths.sn}px;padding:6px 6px;vertical-align:top;font-weight:600;">${r._moduleSN ? escapeHtml(r._moduleSN) : "—"}</td>`;
           html += `<td data-col-key="date" class="hint" style="width:${widths.date}px;min-width:${widths.date}px;max-width:${widths.date}px;padding:6px 6px;vertical-align:top;">${getDateStr(r.date)}${repairClock(r) ? ' ' + repairClock(r) : ''}</td>`;
           html += `<td data-col-key="name" style="width:${widths.name}px;min-width:${widths.name}px;max-width:${widths.name}px;padding:6px 6px;vertical-align:top;">${escapeHtml(r._moduleCompany ? r._moduleCompany + " — " : "")}${escapeHtml(r._moduleName)}</td>`;
@@ -5137,6 +5137,13 @@
       if (set.has(id)) set.delete(id); else set.add(id);
       saveSessionCollapsedSet(set);
       renderBookmarkList();
+    };
+    wrap.ondblclick = (e) => {
+      if (e.target.closest('button')) return;
+      const tr = e.target.closest('tr[data-repair-id]');
+      if (!tr) return;
+      e.preventDefault();
+      window.__pixelTrackerShowRepairInMain(tr.dataset.moduleId, tr.dataset.repairId);
     };
     document.querySelectorAll('.session-sort-table').forEach(applySessionTableWidths);
     wrap.querySelectorAll('[data-session-sort]').forEach(btn => {
@@ -5745,6 +5752,20 @@
     sessionsModalOverlay.classList.remove("show");
     document.body.classList.remove("modal-scroll-lock");
   }
+
+  // Toon een reparatie uit Sessiebeheer in het hoofdscherm: activeer de module,
+  // sluit het venster en scroll/highlight naar de pixel(s) van de reparatie.
+  window.__pixelTrackerShowRepairInMain = function (moduleId, repairId) {
+    const m = state.modules[moduleId];
+    if (!m) return;
+    const rep = (m.repairs || []).find(r => r.id === repairId);
+    if (!rep) return;
+    closeSessionsManager();
+    selectModule(moduleId);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      setTimeout(() => scrollToRepair(rep), 60);
+    }));
+  };
 
   document.getElementById("menuManageSessions").addEventListener("click", () => {
     openSessionsManager();
