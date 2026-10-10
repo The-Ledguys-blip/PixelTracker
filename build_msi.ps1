@@ -39,7 +39,7 @@ New-Item -ItemType Directory -Force $ObjectDir, "dist" | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "WiX Heat mislukte met exitcode $LASTEXITCODE." }
 & $Candle -nologo -arch x64 "-dSourceDir=dist\PixelTracker-Windows" -out "$ObjectDir\" "installer\PixelTracker-Windows.wxs" $Harvest
 if ($LASTEXITCODE -ne 0) { throw "WiX Candle mislukte met exitcode $LASTEXITCODE." }
-& $Light -nologo -cultures:nl-NL -sice:ICE38 -sice:ICE64 -sice:ICE91 -out "dist\PixelTracker_V3.0.24_Beta_Windows11.msi" "$ObjectDir\PixelTracker-Windows.wixobj" "$ObjectDir\PixelTracker-Harvest.wixobj"
+& $Light -nologo -cultures:nl-NL -sice:ICE38 -sice:ICE64 -sice:ICE91 -out "dist\PixelTracker_V3.0.25_Beta_Windows11.msi" "$ObjectDir\PixelTracker-Windows.wixobj" "$ObjectDir\PixelTracker-Harvest.wixobj"
 if ($LASTEXITCODE -ne 0) { throw "WiX Light mislukte met exitcode $LASTEXITCODE." }
 
-Write-Host "MSI gereed: dist\PixelTracker_V3.0.24_Beta_Windows11.msi"
+Write-Host "MSI gereed: dist\PixelTracker_V3.0.25_Beta_Windows11.msi"
