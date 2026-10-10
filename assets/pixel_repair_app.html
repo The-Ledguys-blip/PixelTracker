@@ -112,10 +112,12 @@
   .session-quick-group { display: flex; flex-direction: column; gap: 4px; }
   .session-quick-header { display: flex; align-items: center; gap: 6px; }
   .session-quick-toggle {
-    width: 22px; height: 22px; border: 1px solid var(--border-soft); border-radius: 6px;
+    width: 26px; height: 26px; border: 1px solid var(--border); border-radius: 7px;
     background: var(--chip-bg); color: var(--text); cursor: pointer; flex-shrink: 0;
+    font-size: 14px; font-weight: 700; line-height: 1; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
   }
-  .session-quick-toggle:hover { background: var(--hover-bg); }
+  .session-quick-toggle:hover { background: var(--hover-bg); border-color: var(--accent); color: var(--accent); }
   .session-quick-list .session-switch {
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
     flex: 1; width: 100%; text-align: left; border: 1px solid transparent; border-radius: 7px;
@@ -300,22 +302,26 @@
     top: 8px;
     right: 6px;
     left: auto;
-    width: 22px;
-    height: 22px;
-    border-radius: 7px;
-    border: 1px solid var(--border-soft);
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
     background: var(--chip-bg);
     color: var(--text);
     padding: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 12px;
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1;
     cursor: pointer;
     z-index: 2;
   }
   .repair-sidebar-toggle:hover {
     background: var(--hover-bg);
+    border-color: var(--accent);
+    color: var(--accent);
   }
   .repair-sidebar.collapsed .repair-sidebar-toggle {
     left: 3px;
@@ -538,8 +544,8 @@
     font-size: 12.5px; cursor: pointer; border-bottom: 1px solid var(--border-soft);
   }
   .session-repair-row:hover { background: var(--hover-bg); }
-  .session-repair-row .sr-date { min-width: 82px; }
-  .session-repair-row .sr-sn { min-width: 96px; font-weight: 600; }
+  .session-repair-row .sr-date { flex: 0 0 112px; width: 112px; min-width: 112px; }
+  .session-repair-row .sr-sn { flex: 0 0 96px; width: 96px; min-width: 96px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .session-repair-row .sr-module { flex: 1; }
   .session-repair-row .sr-type { min-width: 130px; }
   .session-repair-row .sr-initials { min-width: 50px; }
@@ -549,6 +555,25 @@
     border: 1px solid var(--accent); color: var(--accent); font-size: 11px;
     white-space: nowrap; max-width: 170px; overflow: hidden; text-overflow: ellipsis; vertical-align: middle;
   }
+  .session-repair-header {
+    display: flex; align-items: center; gap: 10px; padding: 2px 4px 0;
+    border-bottom: 1px solid var(--border); margin-bottom: 2px;
+  }
+  .session-repair-header .sr-head {
+    display: flex; align-items: center; gap: 5px; background: transparent; border: none;
+    color: var(--text); font-weight: 700; font-size: 11.2px; line-height: 1.2;
+    padding: 7px 0; cursor: pointer; text-align: left;
+  }
+  .session-repair-header .sr-head:hover { background: var(--hover-bg); }
+  .session-repair-header .sr-head.active { color: var(--accent); }
+  .session-repair-header .sr-head .session-sort-indicator { font-size: 10px; }
+  .session-repair-header .sr-h-check { width: 15px; flex: 0 0 15px; }
+  .session-repair-header .sr-h-sn { flex: 0 0 96px; width: 96px; overflow: hidden; }
+  .session-repair-header .sr-h-date { flex: 0 0 112px; width: 112px; }
+  .session-repair-header .sr-h-module { flex: 1; }
+  .session-repair-header .sr-h-type { min-width: 130px; }
+  .session-repair-header .sr-h-initials { min-width: 50px; }
+  .session-repair-header .sr-h-bookmark { min-width: 130px; text-align: right; justify-content: flex-end; }
   .session-sort-table {
     width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 8px;
     border: 1px solid var(--border-soft); border-radius: 10px; overflow: hidden;
@@ -1530,7 +1555,7 @@
 
   <!-- RIGHT: repairs list -->
   <div class="panel repair-sidebar" id="repairSidebar">
-    <button type="button" id="repairSidebarToggle" class="repair-sidebar-toggle" title="Reparaties inklappen" aria-label="Reparaties inklappen">⟨</button>
+    <button type="button" id="repairSidebarToggle" class="repair-sidebar-toggle" title="Reparaties inklappen" aria-label="Reparaties inklappen">&#10094;</button>
     <div class="repair-sidebar-panel">
       <h2>Reparaties</h2>
       <div class="repair-filters" id="repairFilters">
@@ -2673,7 +2698,7 @@
     const collapsed = typeof forceState === 'boolean' ? forceState : repairSidebar.classList.contains('collapsed');
     repairSidebar.classList.toggle('collapsed', collapsed);
     repairMain.classList.toggle('repair-sidebar-collapsed', collapsed);
-    repairSidebarToggle.textContent = collapsed ? '⟩' : '⟨';
+    repairSidebarToggle.textContent = collapsed ? '\u276F' : '\u276E';
     repairSidebarToggle.title = collapsed ? 'Reparaties uitklappen' : 'Reparaties inklappen';
     repairSidebarToggle.setAttribute('aria-label', collapsed ? 'Reparaties uitklappen' : 'Reparaties inklappen');
     try {
@@ -4372,7 +4397,13 @@
   // updatedAt/ts, anders blijft de volgorde van aanmaken staan.
   function sessionTimeKey(s) { return String((s && (s.createdAt || s.updatedAt || s.ts)) || ""); }
   function sortSessionsNewestFirst(list) {
-    return list.slice().sort((a, b) => sessionTimeKey(b).localeCompare(sessionTimeKey(a)));
+    const addedOrder = new Map(getSessions().map((s, i) => [s.id, i]));
+    return list.slice().sort((a, b) => {
+      const diff = sessionTimeKey(b).localeCompare(sessionTimeKey(a));
+      if (diff !== 0) return diff;
+      // Gelijke datum/tijd (of geen datum): later toegevoegd = nieuwer.
+      return (addedOrder.get(b.id) || 0) - (addedOrder.get(a.id) || 0);
+    });
   }
 
   const ALL_SESSION_ID = '__ALL__';
@@ -4382,7 +4413,7 @@
     const list = Array.isArray(repairs) ? repairs.slice() : [];
     const keyMap = {
       sn: (r) => String(r._moduleSN || '').trim().toLowerCase(),
-      date: (r) => new Date(r.date || 0).getTime(),
+      date: (r) => repairSortMs(r),
       name: (r) => String((r._moduleCompany ? r._moduleCompany + ' — ' : '') + (r._moduleName || '')).trim().toLowerCase(),
       type: (r) => String(r.type || '').trim().toLowerCase(),
       who: (r) => String(r.initials || '').trim().toLowerCase()
@@ -4412,6 +4443,7 @@
       sessionListSort.dir = key === 'date' ? 'desc' : 'asc';
     }
     renderBookmarkList();
+    renderSessionRepairsTab();
   }
 
   function isAllSession(id) {
@@ -4497,7 +4529,7 @@
         repairs.push({ ...r, _moduleName: m.name, _moduleSN: m.sn, _moduleId: m.id, _moduleCompany: m.company });
       });
     });
-    return repairs.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    return repairs.sort((a, b) => repairSortMs(b) - repairSortMs(a));
   }
 
   function getDateStr(iso) {
@@ -4507,6 +4539,30 @@
   // Tijdstip (HH:MM) van een reparatie; leeg wanneer er (nog) geen kloktijd is.
   function repairClock(r) {
     const raw = (r && (r.updatedAt || r.ts)) || '';
+    if (!raw) return '';
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return '';
+    const pad = n => String(n).padStart(2, '0');
+    return pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  // Sorteersleutel: datum + tijd. Zo komen reparaties van dezelfde dag op tijd
+  // (nieuwste eerst) te staan; valt terug op updatedAt/ts als de datum ontbreekt.
+  function repairSortMs(r) {
+    const datePart = String((r && r.date) || '');
+    const clock = repairClock(r);
+    if (datePart) {
+      const ms = new Date(datePart + (clock ? 'T' + clock + ':00' : 'T00:00:00')).getTime();
+      if (!Number.isNaN(ms)) return ms;
+    }
+    const raw = (r && (r.updatedAt || r.ts)) || '';
+    const fallback = raw ? new Date(raw).getTime() : NaN;
+    return Number.isNaN(fallback) ? 0 : fallback;
+  }
+
+  // Kloktijd (HH:MM) van het aanmaken van een sessie.
+  function sessionClock(s) {
+    const raw = (s && s.createdAt) || '';
     if (!raw) return '';
     const d = new Date(raw);
     if (Number.isNaN(d.getTime())) return '';
@@ -4581,20 +4637,39 @@
     return Array.from(document.querySelectorAll("#sessionRepairList input.repair-select:checked")).map(cb => cb.dataset.repairId);
   }
 
+  // Kolomkoppen van de tab Reparaties: dezelfde categorieën als de sessietabel,
+  // met dezelfde sortering (standaard datum nieuw -> oud, bij gelijke datum tijd
+  // nieuw -> oud).
+  function sessionRepairSortHeaderHtml() {
+    const indicator = (key) => sessionListSort.key === key ? (sessionListSort.dir === 'asc' ? '&#8593;' : '&#8595;') : '';
+    const head = (key, label, cls) =>
+      `<button type="button" class="sr-head sr-h-${cls} ${sessionListSort.key === key ? 'active' : ''}" data-repair-sort="${key}"><span>${label}</span><span class="session-sort-indicator">${indicator(key)}</span></button>`;
+    return `<div class="session-repair-header">
+      <span class="sr-h-check"></span>
+      ${head('sn', 'Serienummer', 'sn')}
+      ${head('date', 'Datum', 'date')}
+      ${head('name', 'Naam', 'module')}
+      ${head('type', 'Type reparatie', 'type')}
+      ${head('who', 'Wie', 'initials')}
+      <span class="sr-h-bookmark" style="font-size:11.2px;font-weight:700;">Sessie</span>
+    </div>`;
+  }
+
   function renderSessionRepairsTab() {
     const wrap = document.getElementById("sessionRepairList");
-    const repairs = getAllRepairsFlat();
+    if (!wrap) return;
+    const repairs = sortSessionRepairs(getAllRepairsFlat(), sessionListSort.key, sessionListSort.dir);
     const selected = new Set(selectedRepairIds());
-    let html = "";
+    let html = sessionRepairSortHeaderHtml();
     if (repairs.length === 0) {
-      html = '<div class="hint" style="padding:10px 4px;">Nog geen reparaties geregistreerd.</div>';
+      html += '<div class="hint" style="padding:10px 4px;">Nog geen reparaties geregistreerd.</div>';
     } else {
       repairs.forEach(r => {
         const bm = getBookmarkOfRepair(r);
         html += `<label class="session-repair-row">
-          <input type="checkbox" class="repair-select" data-repair-id="${r.id}" ${selected.has(r.id) ? "checked" : ""} style="width:15px;height:15px;">
-          <span class="sr-date">${getDateStr(r.date)}</span>
+          <input type="checkbox" class="repair-select" data-repair-id="${r.id}" ${selected.has(r.id) ? "checked" : ""} style="width:15px;height:15px;margin:0;">
           <span class="sr-sn">${r._moduleSN ? escapeHtml(r._moduleSN) : "—"}</span>
+          <span class="sr-date">${getDateStr(r.date)}${repairClock(r) ? ' ' + repairClock(r) : ''}</span>
           <span class="sr-module">${escapeHtml(r._moduleCompany ? r._moduleCompany + " — " : "")}${escapeHtml(r._moduleName)}</span>
           <span class="sr-type">${escapeHtml(r.type)}</span>
           <span class="sr-initials">${escapeHtml(r.initials || "")}</span>
@@ -4603,6 +4678,9 @@
       });
     }
     wrap.innerHTML = html;
+    wrap.querySelectorAll('[data-repair-sort]').forEach(btn => {
+      btn.addEventListener('click', () => onSessionSortClick(btn.dataset.repairSort));
+    });
     updateSessionSelectedCount();
   }
 
@@ -4815,7 +4893,7 @@
       const cardCollapsed = getSessionCollapsedSet().has(s.id);
       html += `<div style="padding:10px 12px;border:2px solid ${isActive ? "var(--accent)" : "var(--border-soft)"};border-radius:10px;margin-bottom:10px;background:${isActive ? "var(--active-bg)" : "transparent"};">`;
       html += `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">`;
-      html += `<span><button type="button" class="session-quick-toggle" style="vertical-align:middle;margin-right:6px;" data-toggle-card="${s.id}" title="${cardCollapsed ? "Sessie uitklappen" : "Sessie inklappen"}" aria-label="${cardCollapsed ? "Uitklappen" : "Inklappen"}">${cardCollapsed ? "&#9656;" : "&#9662;"}</button><strong style="font-size:14px;cursor:pointer;" title="Klik om te hernoemen" onclick="event.stopPropagation();window.__pixelTrackerRenameSession('${s.id}')">${escapeHtml(s.name)}</strong> <span class="hint" style="font-size:12px;">${getDateStr(s.createdAt)} &middot; ${sModuleCount} module${sModuleCount !== 1 ? "s" : ""} &middot; ${sRepairRows.length} reparatie${sRepairRows.length !== 1 ? "s" : ""}${workHint}</span>${isActive ? ' <span style="color:var(--accent);font-size:12px;">&#9679; actief</span>' : ""}</span>`;
+      html += `<span><button type="button" class="session-quick-toggle" style="vertical-align:middle;margin-right:6px;" data-toggle-card="${s.id}" title="${cardCollapsed ? "Sessie uitklappen" : "Sessie inklappen"}" aria-label="${cardCollapsed ? "Uitklappen" : "Inklappen"}">${cardCollapsed ? "&#9654;" : "&#9660;"}</button><strong style="font-size:14px;cursor:pointer;" title="Klik om te hernoemen" onclick="event.stopPropagation();window.__pixelTrackerRenameSession('${s.id}')">${escapeHtml(s.name)}</strong> <span class="hint" style="font-size:12px;">${getDateStr(s.createdAt)}${sessionClock(s) ? ' ' + sessionClock(s) : ''} &middot; ${sModuleCount} module${sModuleCount !== 1 ? "s" : ""} &middot; ${sRepairRows.length} reparatie${sRepairRows.length !== 1 ? "s" : ""}${workHint}</span>${isActive ? ' <span style="color:var(--accent);font-size:12px;">&#9679; actief</span>' : ""}</span>`;
       html += `<div style="display:flex;gap:6px;">`;
       html += `<button class="small" onclick="event.stopPropagation();window.__pixelTrackerSetSession('${s.id}')">${isActive ? "Actief" : "Actief maken"}</button>`;
       html += `<button class="small" onclick="event.stopPropagation();window.__pixelTrackerExportSessionListingPdf('${s.id}')">Export A4</button>`;
@@ -5320,7 +5398,7 @@
       return `
         <div class="session-quick-group ${active ? 'active' : ''}">
           <div class="session-quick-header">
-            ${id === ALL_SESSION_ID ? '<span style="width:22px;display:inline-block;"></span>' : `<button type="button" class="session-quick-toggle" data-toggle-session="${id}" aria-label="${collapsed ? 'Uitklappen' : 'Inklappen'}">${collapsed ? '▸' : '▾'}</button>`}
+            ${id === ALL_SESSION_ID ? '<span style="width:26px;display:inline-block;"></span>' : `<button type="button" class="session-quick-toggle" data-toggle-session="${id}" aria-label="${collapsed ? 'Uitklappen' : 'Inklappen'}">${collapsed ? '&#9654;' : '&#9660;'}</button>`}
             <button type="button" class="session-switch${active ? ' active' : ''}" data-session-select="${id}">
               <span>${label}</span>
               <span class="hint">${active ? 'actief' : sub}</span>
