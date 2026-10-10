@@ -653,6 +653,15 @@
   }
   .session-sort-table tbody tr { transition: background .1s; }
   .session-sort-table tbody tr:hover { background: var(--hover-bg); }
+  #sessionBookmarkList .session-return-category tbody tr { transition: background .1s; }
+  #sessionBookmarkList .session-return-category tbody tr:hover { background: var(--hover-bg); }
+  #sessionBookmarkList tr.session-repair-selected,
+  #sessionBookmarkList tr.session-repair-selected:hover {
+    background: var(--active-bg);
+  }
+  #sessionBookmarkList tr.session-repair-selected > td:first-child {
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
   .session-sort-table tbody tr.session-repair-selected,
   .session-sort-table tbody tr.session-repair-selected:hover {
     background: var(--active-bg); box-shadow: inset 3px 0 0 var(--accent);
@@ -5061,7 +5070,8 @@
         html += `</tr></thead><tbody>`;
         returningList.forEach(rr => {
           const goto = `window.__pixelTrackerShowRepairInMain('${rr.moduleId}','${rr.repairId}')`;
-          html += `<tr style="border-top:1px solid var(--border-soft);font-size:12px;">`;
+          const selCls = sessionRepairSelection.has(rr.sessionId + '|' + rr.repairId) ? ' session-repair-selected' : '';
+          html += `<tr data-repair-id="${rr.repairId}" data-module-id="${rr.moduleId}" data-session-id="${rr.sessionId}" class="${selCls.trim()}" title="Klik om te selecteren, dubbelklik om in het hoofdscherm te tonen" style="border-top:1px solid var(--border-soft);font-size:12px;cursor:pointer;">`;
           html += `<td style="padding:4px 6px;">${getDateStr(rr.date)}</td>`;
           html += `<td style="padding:4px 6px;font-weight:600;">${rr.sn ? escapeHtml(rr.sn) : "—"}</td>`;
           html += `<td style="padding:4px 6px;"><button type="button" class="small" style="padding:2px 8px;" title="Ga naar deze module in het hoofdscherm" onclick="event.stopPropagation();${goto}">${escapeHtml(rr.company ? rr.company + " — " : "")}${escapeHtml(rr.moduleName)}</button></td>`;
