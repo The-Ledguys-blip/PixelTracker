@@ -549,6 +549,7 @@
   .session-repair-row .sr-module { flex: 1; }
   .session-repair-row .sr-type { min-width: 130px; }
   .session-repair-row .sr-initials { min-width: 50px; }
+  .session-repair-row .sr-status { flex: 0 0 90px; width: 90px; min-width: 90px; }
   .session-repair-row .sr-bookmark { min-width: 130px; text-align: right; }
   .session-repair-row .sr-bookmark-badge {
     display: inline-block; padding: 1px 8px; border-radius: 10px;
@@ -573,6 +574,7 @@
   .session-repair-header .sr-h-module { flex: 1; }
   .session-repair-header .sr-h-type { min-width: 130px; }
   .session-repair-header .sr-h-initials { min-width: 50px; }
+  .session-repair-header .sr-h-status { flex: 0 0 90px; width: 90px; }
   .session-repair-header .sr-h-bookmark { min-width: 130px; text-align: right; justify-content: flex-end; }
   .session-sort-table {
     width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 8px;
@@ -4416,7 +4418,8 @@
       date: (r) => repairSortMs(r),
       name: (r) => String((r._moduleCompany ? r._moduleCompany + ' — ' : '') + (r._moduleName || '')).trim().toLowerCase(),
       type: (r) => String(r.type || '').trim().toLowerCase(),
-      who: (r) => String(r.initials || '').trim().toLowerCase()
+      who: (r) => String(r.initials || '').trim().toLowerCase(),
+      status: (r) => String(r.status || '').trim().toLowerCase()
     };
     const getValue = keyMap[key] || keyMap.date;
     return list.sort((a, b) => {
@@ -4570,6 +4573,13 @@
     return pad(d.getHours()) + ':' + pad(d.getMinutes());
   }
 
+  // Statuslabel (Open / Opgelost) met dezelfde kleuren als elders in de app.
+  function statusBadgeHtml(status) {
+    const s = String(status || '').trim();
+    if (!s) return '';
+    return `<span class="badge ${s === 'Opgelost' ? 'resolved' : 'open'}">${escapeHtml(s)}</span>`;
+  }
+
   function getBookmarkOfRepair(repair) {
     if (!repair.sessionId) return "";
     const sess = getSessions().find(s => s.id === repair.sessionId);
@@ -4651,6 +4661,7 @@
       ${head('name', 'Naam', 'module')}
       ${head('type', 'Type reparatie', 'type')}
       ${head('who', 'Wie', 'initials')}
+      ${head('status', 'Status', 'status')}
       <span class="sr-h-bookmark" style="font-size:11.2px;font-weight:700;">Sessie</span>
     </div>`;
   }
@@ -4673,6 +4684,7 @@
           <span class="sr-module">${escapeHtml(r._moduleCompany ? r._moduleCompany + " — " : "")}${escapeHtml(r._moduleName)}</span>
           <span class="sr-type">${escapeHtml(r.type)}</span>
           <span class="sr-initials">${escapeHtml(r.initials || "")}</span>
+          <span class="sr-status">${statusBadgeHtml(r.status)}</span>
           <span class="sr-bookmark">${bm ? `<span class="sr-bookmark-badge" title="Sessie: ${escapeHtml(bm)}">&#128278; ${escapeHtml(bm)}</span>` : ""}</span>
         </label>`;
       });
@@ -4766,7 +4778,7 @@
 
   // --- Tab: Sessies ---
   const SESSION_COLUMN_WIDTHS_KEY = 'pixeltracker_session_column_widths_v1';
-  const DEFAULT_SESSION_COLUMN_WIDTHS = { sn: 110, date: 110, name: 170, type: 140, who: 80, delete: 32 };
+  const DEFAULT_SESSION_COLUMN_WIDTHS = { sn: 110, date: 110, name: 170, type: 140, who: 80, status: 90, delete: 32 };
 
   function getSessionColumnWidths() {
     try {
@@ -4941,6 +4953,12 @@
                     <span class="session-column-resizer" data-resize-key="who" aria-label="Breedte wijzigen"></span>
                   </div>
                 </th>
+                <th data-col-key="status" style="width:${widths.status}px; min-width:${widths.status}px; max-width:${widths.status}px;">
+                  <div class="session-column-header">
+                    <button type="button" class="small session-sort-btn ${sessionListSort.key === 'status' ? 'active' : ''}" data-session-sort="status"><span>Status</span><span class="session-sort-indicator">${sessionListSort.key === 'status' ? (sessionListSort.dir === 'asc' ? '↑' : '↓') : ''}</span></button>
+                    <span class="session-column-resizer" data-resize-key="status" aria-label="Breedte wijzigen"></span>
+                  </div>
+                </th>
                 <th data-col-key="delete" style="width:${widths.delete}px; min-width:${widths.delete}px; max-width:${widths.delete}px; text-align:center;">
                   <div class="session-column-header" style="justify-content:center;">
                     <span>&nbsp;</span>
@@ -4957,6 +4975,7 @@
           html += `<td data-col-key="name" style="width:${widths.name}px;min-width:${widths.name}px;max-width:${widths.name}px;padding:6px 6px;vertical-align:top;">${escapeHtml(r._moduleCompany ? r._moduleCompany + " — " : "")}${escapeHtml(r._moduleName)}</td>`;
           html += `<td data-col-key="type" class="hint" style="width:${widths.type}px;min-width:${widths.type}px;max-width:${widths.type}px;padding:6px 6px;vertical-align:top;">${escapeHtml(r.type)}</td>`;
           html += `<td data-col-key="who" class="hint" style="width:${widths.who}px;min-width:${widths.who}px;max-width:${widths.who}px;padding:6px 6px;vertical-align:top;">${escapeHtml(r.initials || "")}</td>`;
+          html += `<td data-col-key="status" style="width:${widths.status}px;min-width:${widths.status}px;max-width:${widths.status}px;padding:6px 6px;vertical-align:top;">${statusBadgeHtml(r.status)}</td>`;
           html += `<td data-col-key="delete" style="width:${widths.delete}px;min-width:${widths.delete}px;max-width:${widths.delete}px;padding:6px 6px;vertical-align:top;text-align:center;"><button class="small danger" style="padding:1px 6px;" title="Uit sessie halen" onclick="window.__pixelTrackerToggleSessionRepair('${s.id}','${r.id}',false)">&times;</button></td>`;
           html += `</tr>`;
         });
@@ -5177,7 +5196,7 @@
         // Alleen echte reparaties in A4-export (geen Notitie-type)
         if (!isRepairRow(r)) return;
         const row = document.createElement('tr');
-        row.innerHTML = `<td>${getDateStr(r.date)}${repairClock(r) ? ' ' + repairClock(r) : ''}</td>` +
+        row.innerHTML = `<td>${getDateStr(r.date)}</td>` +
           `<td class="ls-sn">${escapeHtml(r._moduleSN || "—")}</td>` +
           `<td>${escapeHtml(r._moduleCompany ? r._moduleCompany + " — " : "")}${escapeHtml(r._moduleName)}</td>` +
           `<td><span class="export-repair-type"><span class="export-repair-dot" style="background:${escapeHtml(r.color || '#e6007e')}"></span>${escapeHtml(r.type)}</span></td>` +
