@@ -24,4 +24,4 @@ if (-not $Iscc) {
 }
 
 & $Iscc installer\PixelTracker-Windows.iss
-Write-Host "Installer gereed: dist\PixelTracker_V3.0.25_Beta_Windows11_Setup.exe"
+Write-Host "Installer gereed: dist\PixelTracker_V3.0.26_Beta_Windows11_Setup.exe"
