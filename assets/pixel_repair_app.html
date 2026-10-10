@@ -1745,7 +1745,7 @@
 
 <!-- Sessies beheer modal -->
 <div class="modal-overlay" id="sessionsModalOverlay">
-  <div class="modal" style="width:1100px;max-width:95vw;max-height:92vh;display:flex;flex-direction:column;font-size:14px;padding:24px 28px;">
+  <div class="modal" style="width:1400px;max-width:96vw;max-height:92vh;display:flex;flex-direction:column;font-size:14px;padding:24px 28px;">
     <h3 style="font-size:18px;margin-bottom:10px;">Sessies</h3>
     <div class="session-tabs">
       <button class="session-tab-btn active" data-tab="reparaties">Reparaties</button>
@@ -4893,7 +4893,7 @@
 
   // --- Tab: Sessies ---
   const SESSION_COLUMN_WIDTHS_KEY = 'pixeltracker_session_column_widths_v1';
-  const DEFAULT_SESSION_COLUMN_WIDTHS = { sn: 110, date: 110, name: 170, type: 140, who: 80, status: 90, delete: 32 };
+  const DEFAULT_SESSION_COLUMN_WIDTHS = { sn: 110, date: 110, name: 170, type: 140, who: 80, returned: 80, status: 90, delete: 32 };
 
   function getSessionColumnWidths() {
     try {
@@ -4992,10 +4992,13 @@
     if (btn) btn.textContent = sessionsAllCollapsed() ? "Alles uitklappen" : "Alles inklappen";
   }
 
+  let returnsCategoryCollapsed = false;
   function renderBookmarkList() {
     const wrap = document.getElementById("sessionBookmarkList");
     const sessions = sortSessionsNewestFirst(getSessions());
     const allRepairs = getAllRepairsFlat();
+    const returningList = computeReturningRepairs();
+    const returningKeys = new Set(returningList.map(rr => rr.sessionId + '|' + rr.repairId));
     let html = "";
     const isAllActive = isAllSession(state.activeSessionId);
     const totalMods = Object.keys(state.modules).length;
@@ -5004,29 +5007,31 @@
     html += `<span><strong style="font-size:14px;">ALL</strong> <span class="hint" style="font-size:12px;">Alle modules &amp; reparaties &middot; ${totalMods} module${totalMods !== 1 ? "s" : ""} &middot; ${allRepairs.filter(isRepairRow).length} reparatie${allRepairs.filter(isRepairRow).length !== 1 ? "s" : ""}</span>${isAllActive ? ' <span style="color:var(--accent);font-size:12px;">&#9679; actief</span>' : ""}</span>`;
     html += `<div style="display:flex;gap:6px;"><button class="small" onclick="event.stopPropagation();window.__pixelTrackerSetSession('${ALL_SESSION_ID}')">${isAllActive ? "Actief" : "Actief maken"}</button></div>`;
     html += `</div></div>`;
-    const returningRepairs = computeReturningRepairs();
     html += `<div class="session-return-category">`;
-    html += `<div class="session-return-head">&#8635; Teruggekomen reparaties (${returningRepairs.length})</div>`;
-    if (!returningRepairs.length) {
-      html += `<div class="hint" style="font-size:12px;text-align:left;">Geen reparaties die op dezelfde pixel zijn teruggekomen.</div>`;
-    } else {
-      html += `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">`;
-      html += `<thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;">`;
-      html += `<th style="padding:4px 6px;">Datum</th><th style="padding:4px 6px;">Serienummer</th><th style="padding:4px 6px;">Module</th><th style="padding:4px 6px;">Pixel</th><th style="padding:4px 6px;">Type</th><th style="padding:4px 6px;">Wie</th><th style="padding:4px 6px;">Sessie</th><th style="padding:4px 6px;">Eerder op</th>`;
-      html += `</tr></thead><tbody>`;
-      returningRepairs.forEach(rr => {
-        html += `<tr style="border-top:1px solid var(--border-soft);font-size:12px;">`;
-        html += `<td style="padding:4px 6px;">${getDateStr(rr.date)}</td>`;
-        html += `<td style="padding:4px 6px;font-weight:600;">${rr.sn ? escapeHtml(rr.sn) : "—"}</td>`;
-        html += `<td class="hint" style="padding:4px 6px;">${escapeHtml(rr.company ? rr.company + " — " : "")}${escapeHtml(rr.moduleName)}</td>`;
-        html += `<td style="padding:4px 6px;font-family:ui-monospace,Menlo,monospace;">${escapeHtml(rr.pixel)}</td>`;
-        html += `<td class="hint" style="padding:4px 6px;">${escapeHtml(rr.type)}</td>`;
-        html += `<td class="hint" style="padding:4px 6px;">${escapeHtml(rr.initials || "")}</td>`;
-        html += `<td class="hint" style="padding:4px 6px;">${escapeHtml(rr.sessionName || "")}</td>`;
-        html += `<td style="padding:4px 6px;color:#e8842c;">${rr.prevDate ? getDateStr(rr.prevDate) : "—"}</td>`;
-        html += `</tr>`;
-      });
-      html += `</tbody></table></div>`;
+    html += `<div class="session-return-head" data-toggle-returns="1" style="cursor:pointer;user-select:none;" title="${returnsCategoryCollapsed ? 'Uitklappen' : 'Inklappen'}"><span style="display:inline-block;width:14px;">${returnsCategoryCollapsed ? '&#9654;' : '&#9660;'}</span>&#8635; Teruggekomen reparaties (${returningList.length})</div>`;
+    if (!returnsCategoryCollapsed) {
+      if (!returningList.length) {
+        html += `<div class="hint" style="font-size:12px;text-align:left;">Geen reparaties die op dezelfde pixel zijn teruggekomen.</div>`;
+      } else {
+        html += `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">`;
+        html += `<thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;">`;
+        html += `<th style="padding:4px 6px;">Datum</th><th style="padding:4px 6px;">Serienummer</th><th style="padding:4px 6px;">Module</th><th style="padding:4px 6px;">Pixel</th><th style="padding:4px 6px;">Type</th><th style="padding:4px 6px;">Wie</th><th style="padding:4px 6px;">Sessie</th><th style="padding:4px 6px;">Eerder op</th>`;
+        html += `</tr></thead><tbody>`;
+        returningList.forEach(rr => {
+          const goto = `window.__pixelTrackerShowRepairInMain('${rr.moduleId}','${rr.repairId}')`;
+          html += `<tr style="border-top:1px solid var(--border-soft);font-size:12px;">`;
+          html += `<td style="padding:4px 6px;">${getDateStr(rr.date)}</td>`;
+          html += `<td style="padding:4px 6px;font-weight:600;">${rr.sn ? escapeHtml(rr.sn) : "—"}</td>`;
+          html += `<td style="padding:4px 6px;"><button type="button" class="small" style="padding:2px 8px;" title="Ga naar deze module in het hoofdscherm" onclick="event.stopPropagation();${goto}">${escapeHtml(rr.company ? rr.company + " — " : "")}${escapeHtml(rr.moduleName)}</button></td>`;
+          html += `<td style="padding:4px 6px;font-family:ui-monospace,Menlo,monospace;">${escapeHtml(rr.pixel)}</td>`;
+          html += `<td class="hint" style="padding:4px 6px;">${escapeHtml(rr.type)}</td>`;
+          html += `<td class="hint" style="padding:4px 6px;">${escapeHtml(rr.initials || "")}</td>`;
+          html += `<td class="hint" style="padding:4px 6px;">${escapeHtml(rr.sessionName || "")}</td>`;
+          html += `<td style="padding:4px 6px;color:#e8842c;">${rr.prevDate ? getDateStr(rr.prevDate) : "—"}</td>`;
+          html += `</tr>`;
+        });
+        html += `</tbody></table></div>`;
+      }
     }
     html += `</div>`;
     if (sessions.length === 0) {
@@ -5097,6 +5102,12 @@
                     <span class="session-column-resizer" data-resize-key="who" aria-label="Breedte wijzigen"></span>
                   </div>
                 </th>
+                <th data-col-key="returned" style="width:${widths.returned}px; min-width:${widths.returned}px; max-width:${widths.returned}px; text-align:center;">
+                  <div class="session-column-header" style="justify-content:center;">
+                    <span title="Op dezelfde pixel eerder gerepareerd">Terug</span>
+                    <span class="session-column-resizer" data-resize-key="returned" aria-label="Breedte wijzigen"></span>
+                  </div>
+                </th>
                 <th data-col-key="status" style="width:${widths.status}px; min-width:${widths.status}px; max-width:${widths.status}px;">
                   <div class="session-column-header">
                     <button type="button" class="small session-sort-btn ${sessionListSort.key === 'status' ? 'active' : ''}" data-session-sort="status"><span>Status</span><span class="session-sort-indicator">${sessionListSort.key === 'status' ? (sessionListSort.dir === 'asc' ? '↑' : '↓') : ''}</span></button>
@@ -5119,6 +5130,8 @@
           html += `<td data-col-key="name" style="width:${widths.name}px;min-width:${widths.name}px;max-width:${widths.name}px;padding:6px 6px;vertical-align:top;">${escapeHtml(r._moduleCompany ? r._moduleCompany + " — " : "")}${escapeHtml(r._moduleName)}</td>`;
           html += `<td data-col-key="type" class="hint" style="width:${widths.type}px;min-width:${widths.type}px;max-width:${widths.type}px;padding:6px 6px;vertical-align:top;">${escapeHtml(r.type)}</td>`;
           html += `<td data-col-key="who" class="hint" style="width:${widths.who}px;min-width:${widths.who}px;max-width:${widths.who}px;padding:6px 6px;vertical-align:top;">${escapeHtml(r.initials || "")}</td>`;
+          const isReturning = returningKeys.has(s.id + '|' + r.id);
+          html += `<td data-col-key="returned" style="width:${widths.returned}px;min-width:${widths.returned}px;max-width:${widths.returned}px;padding:6px 6px;vertical-align:top;text-align:center;">${isReturning ? '<span style="color:#e8842c;font-weight:700;" title="Op dezelfde pixel eerder gerepareerd">&#8635;</span>' : ""}</td>`;
           html += `<td data-col-key="status" style="width:${widths.status}px;min-width:${widths.status}px;max-width:${widths.status}px;padding:6px 6px;vertical-align:top;">${statusBadgeHtml(r.status)}</td>`;
           html += `<td data-col-key="delete" style="width:${widths.delete}px;min-width:${widths.delete}px;max-width:${widths.delete}px;padding:6px 6px;vertical-align:top;text-align:center;"><button class="small danger" style="padding:1px 6px;" title="Uit sessie halen" onclick="window.__pixelTrackerToggleSessionRepair('${s.id}','${r.id}',false)">&times;</button></td>`;
           html += `</tr>`;
@@ -5130,6 +5143,11 @@
     wrap.innerHTML = html;
     updateSessionCollapseAllLabel();
     wrap.onclick = (e) => {
+      if (e.target.closest('[data-toggle-returns]')) {
+        returnsCategoryCollapsed = !returnsCategoryCollapsed;
+        renderBookmarkList();
+        return;
+      }
       const t = e.target.closest('[data-toggle-card]');
       if (!t) return;
       const set = getSessionCollapsedSet();
@@ -5292,6 +5310,7 @@
           earlier.forEach(e => { if (e.date && e.date > prevDate) prevDate = e.date; });
           out.push({
             sessionId: s.id, sessionName: s.name, sn: r._moduleSN || '',
+            moduleId: r._moduleId, repairId: r.id,
             moduleName: r._moduleName, company: r._moduleCompany,
             pixel: px[0] + ', ' + px[1], date: r.date, initials: r.initials,
             type: r.type, prevDate
