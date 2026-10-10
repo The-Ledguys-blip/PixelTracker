@@ -5217,10 +5217,9 @@
     }
     let html = `<div class="hint" style="font-size:12px;padding:4px 2px 8px;">${mods.length} geregistreerde module${mods.length !== 1 ? "s" : ""}.</div>`;
     mods.forEach(m => {
-      const repCount = (getActiveSession() ? getSessionFilteredRepairs(m.repairs || [], getActiveSession()) : (m.repairs || [])).filter(isRepairRow).length;
       html += `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 4px;border-bottom:1px solid var(--border-soft);font-size:13px;cursor:pointer;" onclick="selectModule('${m.id}');closeSessionsManager();">`;
-      html += `<span>${escapeHtml(m.company ? m.company + " — " : "")}<strong>${escapeHtml(m.name)}</strong> ${m.sn ? '<span class="hint">SN: ' + escapeHtml(m.sn) + "</span>" : ""}</span>`;
-      html += `<span class="hint">${m.width}&times;${m.height}px &middot; ${repCount} reparatie${repCount !== 1 ? "s" : ""} &middot; ${getDateStr(m.updatedAt)}</span>`;
+      html += `<span><strong>${escapeHtml(m.name)}</strong>${m.sn ? ' <span class="hint">SN: ' + escapeHtml(m.sn) + "</span>" : ""}</span>`;
+      html += `<span class="hint">${getDateStr(m.updatedAt)}</span>`;
       html += `</div>`;
     });
     wrap.innerHTML = html;
