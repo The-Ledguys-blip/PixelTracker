@@ -1361,6 +1361,11 @@
     overflow: hidden;
   }
   .export-listing-section .export-repairs-head { background: #232329; }
+  .export-listing-empty {
+    font-size: 11px;
+    color: #a4acba;
+    padding: 8px 12px;
+  }
   .export-listing table th,
   .export-listing table td { font-size: 10px; }
   .export-listing td.ls-sn {
@@ -5158,6 +5163,55 @@
     refreshSessionViews();
   };
 
+  // Bepaalt voor een sessie welke panelen "teruggekomen" zijn: een paneel met
+  // een reparatie in deze sessie op exact dezelfde pixel als een eerdere
+  // reparatie op datzelfde paneel. Panelen worden herkend via serienummer
+  // (of, als dat ontbreekt, via module-id), zodat zowel samengevoegde als
+  // losse modules met hetzelfde SN meetellen.
+  function computeSessionReturns(session) {
+    if (!session) return [];
+    const sessionRepIds = getSessionRepairIds(session);
+    const inSession = r => sessionRepIds.includes(r.id) || r.sessionId === session.id;
+    const panels = {};
+    getAllRepairsFlat().forEach(r => {
+      if (!isRepairRow(r)) return;
+      const sn = String(r._moduleSN || '').trim();
+      const key = sn ? ('sn:' + sn) : ('mid:' + r._moduleId);
+      if (!panels[key]) panels[key] = { sn, name: r._moduleName || '', company: r._moduleCompany || '', repairs: [] };
+      panels[key].repairs.push(r);
+    });
+    const returns = [];
+    Object.values(panels).forEach(p => {
+      const pxSeen = {};
+      p.repairs.forEach(r => {
+        const ms = repairSortMs(r);
+        (r.pixels || []).forEach(px => {
+          const k = px[0] + ',' + px[1];
+          (pxSeen[k] = pxSeen[k] || []).push({ ms, date: r.date });
+        });
+      });
+      const repeatKeys = new Set();
+      let prevDate = '';
+      p.repairs.filter(inSession).forEach(r => {
+        const ms = repairSortMs(r);
+        (r.pixels || []).forEach(px => {
+          const k = px[0] + ',' + px[1];
+          (pxSeen[k] || []).forEach(e => {
+            if (e.ms < ms) {
+              repeatKeys.add(k);
+              if (e.date && e.date > prevDate) prevDate = e.date;
+            }
+          });
+        });
+      });
+      if (repeatKeys.size) {
+        returns.push({ sn: p.sn, name: p.name, company: p.company, repeatPixels: repeatKeys.size, prevDate });
+      }
+    });
+    returns.sort((a, b) => b.repeatPixels - a.repeatPixels);
+    return returns;
+  }
+
   function buildSessionListingData(sessionId) {
     const session = getSessions().find(s => s.id === sessionId);
     if (!session) return null;
@@ -5183,12 +5237,13 @@
       modsBy[r._moduleId].repairs++;
       modsBy[r._moduleId].pixels += Array.isArray(r.pixels) ? r.pixels.length : 0;
     });
-    return { session, repairs, repCount: repairRows.length, modules: Object.values(modsBy), work: sessionWorkLabel(session) };
+    const returns = computeSessionReturns(session);
+    return { session, repairs, repCount: repairRows.length, modules: Object.values(modsBy), work: sessionWorkLabel(session), returns, returnCount: returns.length };
   }
 
   function buildSessionListingPages(data, dark) {
     const pages = [];
-    const { session, modules, repairs, repCount } = data;
+    const { session, modules, repairs, repCount, returns, returnCount } = data;
     // Notities verwijderen uit exportweergave
     repairs.forEach(r => { if (r && typeof r.note !== 'undefined') r.note = ''; });
     const repairRows = repairs.filter(isRepairRow);
@@ -5234,6 +5289,7 @@
         <div class="export-listing-meta">
           <span>${modules.length} module${modules.length !== 1 ? "s" : ""}</span>
           <span>&middot; ${repCount} reparatie${repCount !== 1 ? "s" : ""}</span>
+          <span>&middot; ${returnCount} teruggekomen module${returnCount !== 1 ? "s" : ""}</span>
         </div>
       `;
       list.appendChild(head);
@@ -5286,6 +5342,38 @@
         sumSection.appendChild(sumHead);
         sumSection.appendChild(sumTable);
         body.appendChild(sumSection);
+      }
+
+      if (isFirst) {
+        const retSection = document.createElement('section');
+        retSection.className = 'export-listing-section';
+        const retHead = document.createElement('h3');
+        retHead.className = 'export-repairs-head';
+        retHead.textContent = 'Teruggekomen modules (' + returnCount + ')';
+        retSection.appendChild(retHead);
+        if (!returnCount) {
+          const empty = document.createElement('div');
+          empty.className = 'export-listing-empty';
+          empty.textContent = 'Geen modules die in deze sessie opnieuw op dezelfde pixel zijn gerepareerd.';
+          retSection.appendChild(empty);
+        } else {
+          const retTable = document.createElement('table');
+          retTable.className = 'export-repairs-table';
+          retTable.innerHTML = `
+            <thead><tr>
+              <th>Serienummer</th><th>Module</th><th class="ls-num">Terug op pixels</th><th>Eerder hersteld</th>
+            </tr></thead><tbody></tbody>`;
+          returns.forEach(rt => {
+            const row = document.createElement('tr');
+            row.innerHTML = `<td class="ls-sn">${escapeHtml(rt.sn || '—')}</td>` +
+              `<td>${escapeHtml(rt.company ? rt.company + ' — ' : '')}${escapeHtml(rt.name)}</td>` +
+              `<td class="ls-num">${rt.repeatPixels}</td>` +
+              `<td>${rt.prevDate ? getDateStr(rt.prevDate) : '—'}</td>`;
+            retTable.querySelector('tbody').appendChild(row);
+          });
+          retSection.appendChild(retTable);
+        }
+        body.appendChild(retSection);
       }
 
       const repSection = document.createElement('section');
