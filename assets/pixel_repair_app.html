@@ -651,6 +651,12 @@
     border: 1px solid var(--border-soft); border-radius: 10px; overflow: hidden;
     background: var(--panel-bg); table-layout: fixed;
   }
+  .session-sort-table tbody tr { transition: background .1s; }
+  .session-sort-table tbody tr:hover { background: var(--hover-bg); }
+  .session-sort-table tbody tr.session-repair-selected,
+  .session-sort-table tbody tr.session-repair-selected:hover {
+    background: var(--active-bg); box-shadow: inset 3px 0 0 var(--accent);
+  }
   .session-sort-table thead th {
     background: var(--chip-bg); border-bottom: 1px solid var(--border-soft); padding: 0; text-align: left;
     position: relative;
@@ -5021,6 +5027,14 @@
   }
 
   let returnsCategoryCollapsed = false;
+  // Selectie van reparatieregels in Sessiebeheer (tab Sessies). Blijft bewaard
+  // bij het hertekenen; enkel visueel, navigeren gaat via dubbelklikken.
+  const sessionRepairSelection = new Set();
+  function applySessionRepairSelection() {
+    document.querySelectorAll('#sessionBookmarkList tr[data-repair-id]').forEach(tr => {
+      tr.classList.toggle('session-repair-selected', sessionRepairSelection.has(tr.dataset.sessionId + '|' + tr.dataset.repairId));
+    });
+  }
   function renderBookmarkList() {
     const wrap = document.getElementById("sessionBookmarkList");
     const sessions = sortSessionsNewestFirst(getSessions());
@@ -5152,7 +5166,8 @@
             <tbody>
         `;
         sortedRepairs.forEach(r => {
-          html += `<tr data-repair-id="${r.id}" data-module-id="${r._moduleId}" title="Dubbelklik om in het hoofdscherm te tonen" style="border-top:1px solid var(--border-soft);font-size:12px;cursor:pointer;">`;
+          const selCls = sessionRepairSelection.has(s.id + '|' + r.id) ? ' session-repair-selected' : '';
+          html += `<tr data-repair-id="${r.id}" data-module-id="${r._moduleId}" data-session-id="${s.id}" class="${selCls.trim()}" title="Klik om te selecteren, dubbelklik om in het hoofdscherm te tonen" style="border-top:1px solid var(--border-soft);font-size:12px;cursor:pointer;">`;
           html += `<td data-col-key="sn" style="width:${widths.sn}px;min-width:${widths.sn}px;max-width:${widths.sn}px;padding:6px 6px;vertical-align:top;font-weight:600;">${r._moduleSN ? escapeHtml(r._moduleSN) : "—"}</td>`;
           html += `<td data-col-key="date" class="hint" style="width:${widths.date}px;min-width:${widths.date}px;max-width:${widths.date}px;padding:6px 6px;vertical-align:top;">${getDateStr(r.date)}${repairClock(r) ? ' ' + repairClock(r) : ''}</td>`;
           html += `<td data-col-key="name" style="width:${widths.name}px;min-width:${widths.name}px;max-width:${widths.name}px;padding:6px 6px;vertical-align:top;">${escapeHtml(r._moduleCompany ? r._moduleCompany + " — " : "")}${escapeHtml(r._moduleName)}</td>`;
@@ -5177,18 +5192,38 @@
         return;
       }
       const t = e.target.closest('[data-toggle-card]');
-      if (!t) return;
-      const set = getSessionCollapsedSet();
-      const id = t.dataset.toggleCard;
-      if (set.has(id)) set.delete(id); else set.add(id);
-      saveSessionCollapsedSet(set);
-      renderBookmarkList();
+      if (t) {
+        const set = getSessionCollapsedSet();
+        const id = t.dataset.toggleCard;
+        if (set.has(id)) set.delete(id); else set.add(id);
+        saveSessionCollapsedSet(set);
+        renderBookmarkList();
+        return;
+      }
+      const tr = e.target.closest('tr[data-repair-id]');
+      if (!tr || e.target.closest('button')) return;
+      const key = tr.dataset.sessionId + '|' + tr.dataset.repairId;
+      const additive = e.ctrlKey || e.metaKey || e.shiftKey;
+      if (additive) {
+        if (sessionRepairSelection.has(key)) sessionRepairSelection.delete(key);
+        else sessionRepairSelection.add(key);
+      } else if (sessionRepairSelection.size === 1 && sessionRepairSelection.has(key)) {
+        sessionRepairSelection.clear();
+      } else {
+        sessionRepairSelection.clear();
+        sessionRepairSelection.add(key);
+      }
+      applySessionRepairSelection();
     };
     wrap.ondblclick = (e) => {
       if (e.target.closest('button')) return;
       const tr = e.target.closest('tr[data-repair-id]');
       if (!tr) return;
       e.preventDefault();
+      const key = tr.dataset.sessionId + '|' + tr.dataset.repairId;
+      sessionRepairSelection.clear();
+      sessionRepairSelection.add(key);
+      applySessionRepairSelection();
       window.__pixelTrackerShowRepairInMain(tr.dataset.moduleId, tr.dataset.repairId);
     };
     document.querySelectorAll('.session-sort-table').forEach(applySessionTableWidths);
