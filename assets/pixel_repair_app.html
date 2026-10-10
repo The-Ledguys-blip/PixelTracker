@@ -2739,12 +2739,40 @@
     return localStorage.getItem(AUTO_SAVE_ENABLED_KEY) === '1';
   }
 
+  // Alleen echte gegevenswijzigingen (modules, reparaties, namen, users,
+  // sessies) tellen als "niet opgeslagen". Navigatie zoals het actieve paneel
+  // of de actieve sessie wisselen mag het opslagbolletje niet rood maken.
+  function dataSnapshot() {
+    return JSON.stringify({
+      modules: state.modules || {},
+      users: state.users || [],
+      currentUser: state.currentUser || null,
+      sessions: state.sessions || []
+    });
+  }
+
+  function normalizeManualSnapshot(raw) {
+    if (!raw) return null;
+    try {
+      const obj = JSON.parse(raw);
+      if (obj && typeof obj === 'object' && ('modules' in obj || 'sessions' in obj)) {
+        return JSON.stringify({
+          modules: obj.modules || {},
+          users: obj.users || [],
+          currentUser: obj.currentUser || null,
+          sessions: obj.sessions || []
+        });
+      }
+    } catch (e) {}
+    return raw;
+  }
+
   function hasUnsavedManualSave() {
-    return stateSnapshot() !== lastManualSaveSnapshot;
+    return dataSnapshot() !== lastManualSaveSnapshot;
   }
 
   function markManualSaveSnapshot() {
-    lastManualSaveSnapshot = stateSnapshot();
+    lastManualSaveSnapshot = dataSnapshot();
     localStorage.setItem(MANUAL_SAVE_SNAPSHOT_KEY, lastManualSaveSnapshot);
     updateSaveStatusIndicator();
   }
@@ -3063,7 +3091,7 @@
   const startupRestoreAvailable = sessionRestored || Object.keys(startupRestoreState.modules || {}).length > 0;
   const startupRestoreName = localStorage.getItem(CURRENT_SAVE_NAME_KEY) || startupRestoreState.saveName || '';
   let state = defaultState();
-  let lastManualSaveSnapshot = localStorage.getItem(MANUAL_SAVE_SNAPSHOT_KEY) || stateSnapshot();
+  let lastManualSaveSnapshot = normalizeManualSnapshot(localStorage.getItem(MANUAL_SAVE_SNAPSHOT_KEY)) || dataSnapshot();
   let currentSaveName = '';
   window.currentSaveName = '';
   let currentDatabasePath = '';
