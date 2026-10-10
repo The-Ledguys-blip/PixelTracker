@@ -581,6 +581,11 @@
   .session-tab-btn:hover { background: var(--hover-bg); color: var(--text); }
   .session-tab-btn.active { color: var(--accent); border-color: var(--border); background: var(--active-bg); }
   .session-return-badge { color: #e8842c; font-weight: 600; font-size: 12px; white-space: nowrap; }
+  .session-return-category {
+    border: 1px solid rgba(232,132,44,0.4); border-radius: 10px; padding: 8px 10px;
+    margin-bottom: 10px; background: rgba(232,132,44,0.06);
+  }
+  .session-return-head { color: #e8842c; font-weight: 700; font-size: 13px; margin-bottom: 6px; }
   .session-tab-panel { display: none; flex: 1; min-height: 0; flex-direction: column; gap: 10px; margin-top: 12px; }
   .session-tab-panel.active { display: flex; }
   .session-repair-row {
@@ -4999,6 +5004,31 @@
     html += `<span><strong style="font-size:14px;">ALL</strong> <span class="hint" style="font-size:12px;">Alle modules &amp; reparaties &middot; ${totalMods} module${totalMods !== 1 ? "s" : ""} &middot; ${allRepairs.filter(isRepairRow).length} reparatie${allRepairs.filter(isRepairRow).length !== 1 ? "s" : ""}</span>${isAllActive ? ' <span style="color:var(--accent);font-size:12px;">&#9679; actief</span>' : ""}</span>`;
     html += `<div style="display:flex;gap:6px;"><button class="small" onclick="event.stopPropagation();window.__pixelTrackerSetSession('${ALL_SESSION_ID}')">${isAllActive ? "Actief" : "Actief maken"}</button></div>`;
     html += `</div></div>`;
+    const returningRepairs = computeReturningRepairs();
+    html += `<div class="session-return-category">`;
+    html += `<div class="session-return-head">&#8635; Teruggekomen reparaties (${returningRepairs.length})</div>`;
+    if (!returningRepairs.length) {
+      html += `<div class="hint" style="font-size:12px;text-align:left;">Geen reparaties die op dezelfde pixel zijn teruggekomen.</div>`;
+    } else {
+      html += `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">`;
+      html += `<thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;">`;
+      html += `<th style="padding:4px 6px;">Datum</th><th style="padding:4px 6px;">Serienummer</th><th style="padding:4px 6px;">Module</th><th style="padding:4px 6px;">Pixel</th><th style="padding:4px 6px;">Type</th><th style="padding:4px 6px;">Wie</th><th style="padding:4px 6px;">Sessie</th><th style="padding:4px 6px;">Eerder op</th>`;
+      html += `</tr></thead><tbody>`;
+      returningRepairs.forEach(rr => {
+        html += `<tr style="border-top:1px solid var(--border-soft);font-size:12px;">`;
+        html += `<td style="padding:4px 6px;">${getDateStr(rr.date)}</td>`;
+        html += `<td style="padding:4px 6px;font-weight:600;">${rr.sn ? escapeHtml(rr.sn) : "—"}</td>`;
+        html += `<td class="hint" style="padding:4px 6px;">${escapeHtml(rr.company ? rr.company + " — " : "")}${escapeHtml(rr.moduleName)}</td>`;
+        html += `<td style="padding:4px 6px;font-family:ui-monospace,Menlo,monospace;">${escapeHtml(rr.pixel)}</td>`;
+        html += `<td class="hint" style="padding:4px 6px;">${escapeHtml(rr.type)}</td>`;
+        html += `<td class="hint" style="padding:4px 6px;">${escapeHtml(rr.initials || "")}</td>`;
+        html += `<td class="hint" style="padding:4px 6px;">${escapeHtml(rr.sessionName || "")}</td>`;
+        html += `<td style="padding:4px 6px;color:#e8842c;">${rr.prevDate ? getDateStr(rr.prevDate) : "—"}</td>`;
+        html += `</tr>`;
+      });
+      html += `</tbody></table></div>`;
+    }
+    html += `</div>`;
     if (sessions.length === 0) {
       html += '<div class="hint" style="padding:10px 4px;">Nog geen sessies. Vink in de tab "Reparaties" reparaties aan en maak een nieuwe sessie.</div>';
       wrap.innerHTML = html;
@@ -5215,6 +5245,55 @@
     });
     returns.sort((a, b) => b.repeatPixels - a.repeatPixels);
     return returns;
+  }
+
+  // Lijst met losse reparaties die op exact dezelfde pixel zijn teruggekomen:
+  // een reparatie in een sessie waarvan dezelfde pixel op hetzelfde paneel
+  // eerder al gerepareerd was. Panelen worden herkend via serienummer (anders
+  // via module-id). Bedoeld voor de categorie "Teruggekomen" in Sessiebeheer.
+  function computeReturningRepairs() {
+    const allRepairs = getAllRepairsFlat();
+    const pxIndex = {};
+    allRepairs.forEach(r => {
+      if (!isRepairRow(r)) return;
+      const sn = String(r._moduleSN || '').trim();
+      const key = sn ? ('sn:' + sn) : ('mid:' + r._moduleId);
+      const idx = (pxIndex[key] = pxIndex[key] || {});
+      const ms = repairSortMs(r);
+      (r.pixels || []).forEach(px => {
+        const pk = px[0] + ',' + px[1];
+        (idx[pk] = idx[pk] || []).push({ ms, date: r.date });
+      });
+    });
+    const out = [];
+    const seen = new Set();
+    getSessions().forEach(s => {
+      allRepairs.forEach(r => {
+        if (!isRepairRow(r) || !repairBelongsToSession(r, s)) return;
+        const sn = String(r._moduleSN || '').trim();
+        const key = sn ? ('sn:' + sn) : ('mid:' + r._moduleId);
+        const idx = pxIndex[key] || {};
+        const ms = repairSortMs(r);
+        (r.pixels || []).forEach(px => {
+          const pk = px[0] + ',' + px[1];
+          const earlier = (idx[pk] || []).filter(e => e.ms < ms);
+          if (!earlier.length) return;
+          const dedup = s.id + '|' + r.id + '|' + pk;
+          if (seen.has(dedup)) return;
+          seen.add(dedup);
+          let prevDate = '';
+          earlier.forEach(e => { if (e.date && e.date > prevDate) prevDate = e.date; });
+          out.push({
+            sessionId: s.id, sessionName: s.name, sn: r._moduleSN || '',
+            moduleName: r._moduleName, company: r._moduleCompany,
+            pixel: px[0] + ', ' + px[1], date: r.date, initials: r.initials,
+            type: r.type, prevDate
+          });
+        });
+      });
+    });
+    out.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    return out;
   }
 
   function buildSessionListingData(sessionId) {
