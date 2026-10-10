@@ -42,8 +42,8 @@ jobs:
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
-          name: PixelTracker-V3.0.29-Beta-Windows11
+          name: PixelTracker-V3.0.30-Beta-Windows11
           path: |
-            dist/PixelTracker_V3.0.29_Beta_Windows11_Setup.exe
-            dist/PixelTracker_V3.0.29_Beta_Windows11.msi
+            dist/PixelTracker_V3.0.30_Beta_Windows11_Setup.exe
+            dist/PixelTracker_V3.0.30_Beta_Windows11.msi
           if-no-files-found: error
