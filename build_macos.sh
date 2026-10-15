@@ -50,6 +50,35 @@ source .venv/bin/activate
 echo "==> Bouw ${APP_NAME}.app met PyInstaller..."
 pyinstaller --noconfirm --clean build/PixelTracker.spec
 
+# ---------- Optionele code-signing / notarisatie ----------
+# Zonder certificaat blijft de build ongewijzigd (unsigned, zoals voorheen).
+# Voor distributie:
+#   export PIXELTRACKER_SIGN_IDENTITY="Developer ID Application: Naam (TEAMID)"
+#   export PIXELTRACKER_NOTARY_PROFILE="pixeltracker-notary"   # xcrun notarytool store-credentials
+ENTITLEMENTS="build/entitlements.macos.plist"
+SIGN_IDENTITY="${PIXELTRACKER_SIGN_IDENTITY:-}"
+NOTARY_PROFILE="${PIXELTRACKER_NOTARY_PROFILE:-}"
+
+if [ -n "$SIGN_IDENTITY" ]; then
+  echo "==> Code-signeren met: ${SIGN_IDENTITY}"
+  codesign --force --deep --options runtime --timestamp \
+    --entitlements "$ENTITLEMENTS" \
+    --sign "$SIGN_IDENTITY" "dist/${APP_NAME}.app"
+  codesign --verify --deep --strict --verbose=2 "dist/${APP_NAME}.app"
+else
+  echo "==> PIXELTRACKER_SIGN_IDENTITY niet gezet: app wordt NIET ondertekend."
+  echo "    Zet PIXELTRACKER_SIGN_IDENTITY (Developer ID Application) voor distributie."
+fi
+
+if [ -n "$NOTARY_PROFILE" ] && [ -n "$SIGN_IDENTITY" ]; then
+  echo "==> Notariseren van de app..."
+  ZIP_PATH="dist/${APP_NAME}_notarize.zip"
+  ditto -c -k --keepParent "dist/${APP_NAME}.app" "$ZIP_PATH"
+  xcrun notarytool submit "$ZIP_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
+  xcrun stapler staple "dist/${APP_NAME}.app"
+  rm -f "$ZIP_PATH"
+fi
+
 echo "==> Verwijder oude DMG..."
 rm -f "dist/${DMG_NAME}.dmg"
 
@@ -64,6 +93,15 @@ hdiutil create -volname "${APP_NAME}" \
   "dist/${DMG_NAME}.dmg"
 
 rm -rf "${STAGING_DIR}"
+
+if [ -n "$NOTARY_PROFILE" ] && [ -n "$SIGN_IDENTITY" ]; then
+  echo "==> Notariseren van de DMG..."
+  if xcrun notarytool submit "dist/${DMG_NAME}.dmg" --keychain-profile "$NOTARY_PROFILE" --wait; then
+    xcrun stapler staple "dist/${DMG_NAME}.dmg"
+  else
+    echo "!! DMG-notarisatie mislukt; de app zelf is wel genotariseerd en gestapeld."
+  fi
+fi
 
 echo "==> Klaar!"
 echo "    .app: dist/${APP_NAME}.app"

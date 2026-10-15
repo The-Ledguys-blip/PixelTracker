@@ -750,6 +750,31 @@
   .modal h3 { margin: 0 0 6px; font-size: 14px; }
   .modal-subtitle { font-size: 11px; color: var(--text-muted); margin: 0 0 12px; }
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .about-modal { width: 560px; max-width: 94vw; }
+  .about-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .about-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .about-version {
+    font-size: 11px; font-weight: 700; color: var(--accent);
+    background: var(--chip-bg); border: 1px solid var(--border-soft);
+    border-radius: 999px; padding: 3px 10px; white-space: nowrap;
+  }
+  .about-grid {
+    display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 14px 0 4px;
+    font-size: 11.5px; align-items: baseline;
+  }
+  .about-grid .about-label { color: var(--text-muted); white-space: nowrap; }
+  .about-grid .about-value {
+    color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    word-break: break-all; user-select: text;
+  }
+  .about-contact {
+    margin-top: 14px; padding: 10px 12px; border: 1px solid var(--border-soft);
+    border-radius: 10px; background: var(--chip-bg);
+  }
+  .about-contact-title { font-size: 11px; font-weight: 700; margin-bottom: 4px; }
+  .about-contact-body { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+  .about-contact-body a { color: var(--accent); text-decoration: none; }
+  .about-actions { flex-wrap: wrap; }
   .startup-modal { width: 430px; padding: 22px; }
   .startup-kicker {
     color: var(--accent);
@@ -1493,6 +1518,8 @@
         <div class="menu-subdropdown" id="recentFilesSubmenu"></div>
       </div>
       <hr>
+      <button id="menuRestoreBackup">Back-ups herstellen...</button>
+      <hr>
       <button id="menuExportCsv">Reparaties exporteren (CSV)</button>
       <button id="menuExportSelectedA3">Exporteren: huidige module (A3)</button>
       <button id="menuExportDatabaseA3">Exporteren: hele database (A3)</button>
@@ -1549,6 +1576,15 @@
         <div class="shortcut-row"><kbd>Ctrl + Shift + Z</kbd><span class="shortcut-desc">Opnieuw</span></div>
       </div>
       <div class="shortcut-note">Op macOS werkt ⌘ (Cmd) in plaats van Ctrl.</div>
+    </div>
+  </div>
+  <div class="menu-wrap">
+    <button class="menu-trigger" id="helpMenuBtn">Help ▾</button>
+    <div class="menu-dropdown" id="helpMenuDropdown">
+      <button id="menuAbout">Over PixelTracker...</button>
+      <hr>
+      <button id="menuOpenLog">Logbestand openen</button>
+      <button id="menuOpenDataFolder">Gegevensmap openen</button>
     </div>
   </div>
 </div>
@@ -2015,6 +2051,29 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="aboutModalOverlay" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+  <div class="modal about-modal">
+    <div class="about-head">
+      <div>
+        <h3 id="aboutTitle">PixelTracker</h3>
+        <div class="about-sub">Pixel-reparatie registratie</div>
+      </div>
+      <span class="about-version" id="aboutVersion"></span>
+    </div>
+    <div class="about-grid" id="aboutInfo"></div>
+    <div class="about-contact">
+      <div class="about-contact-title">Support &amp; contact</div>
+      <div id="aboutContactBody" class="about-contact-body"></div>
+    </div>
+    <div class="modal-actions about-actions">
+      <button id="aboutCopyInfoBtn">Kopieer systeeminfo</button>
+      <button id="aboutOpenLogBtn">Logbestand openen</button>
+      <button id="aboutOpenDataBtn">Gegevensmap openen</button>
+      <button id="aboutCloseBtn" class="primary">Sluiten</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function() {
   const STORAGE_KEY = 'pixelRepairApp_v2';
@@ -2028,6 +2087,12 @@
   // .json-bestanden blijven importeren (en worden bij opslaan naar .ptdb geconverteerd).
   const DB_EXT = '.ptdb';
   const AUTO_SAVE_ENABLED_KEY = 'pixelRepairApp_autoSaveEnabled_v1';
+  const APP_TAB_KEY = 'pixelRepairApp_activeTab_v1';
+  // Support-/contactgegevens die in het Over-venster worden getoond. Laat leeg
+  // om de betreffende regel te verbergen; vul bijv. een e-mailadres of
+  // intranetlink in voor de helpdesk.
+  const SUPPORT_EMAIL = '';
+  const SUPPORT_URL = '';
   const LAST_SESSION_SNAPSHOT_KEY = 'pixelRepairApp_lastSessionSnapshot_v1';
   const LAST_USED_FILE_SNAPSHOT_KEY = 'pixelRepairApp_lastUsedFileSnapshot_v1';
   const LAST_KNOWN_GOOD_STATE_KEY = 'pixelRepairApp_lastKnownGoodState_v1';
@@ -5868,6 +5933,7 @@
     if (homeView) homeView.hidden = currentAppTab !== "home";
     if (sessionsView) sessionsView.hidden = currentAppTab !== "sessie";
     document.body.classList.remove("modal-scroll-lock");
+    try { localStorage.setItem(APP_TAB_KEY, currentAppTab); } catch (e) {}
   }
   function openSessionsManager() {
     renderSessionRepairsTab();
@@ -5906,6 +5972,118 @@
     sessionsMenuBtnEl.classList.remove("open");
   });
   document.getElementById("sessionsModalClose").addEventListener("click", closeSessionsManager);
+
+  // ---------- Help / Over ----------
+  const aboutModalOverlay = document.getElementById('aboutModalOverlay');
+  function aboutAppInfo() {
+    const info = window.__pixelTrackerInfo || {};
+    return {
+      version: BUILD_VERSION,
+      platform: info.platform || (navigator.platform || ''),
+      dataDir: info.dataDir || '',
+      logFile: info.logFile || '',
+      backupDir: info.backupDir || '',
+      desktop: !!window.__pixelTrackerDesktop,
+      frozen: !!info.frozen,
+    };
+  }
+
+  function aboutRows(info) {
+    const rows = [['Versie', info.version]];
+    if (info.platform) rows.push(['Platform', info.platform === 'darwin' ? 'macOS' : (info.platform === 'win32' ? 'Windows' : info.platform)]);
+    if (info.dataDir) rows.push(['Gegevensmap', info.dataDir]);
+    if (info.logFile) rows.push(['Logbestand', info.logFile]);
+    if (info.backupDir) rows.push(['Back-ups', info.backupDir]);
+    if (info.desktop) rows.push(['Modus', info.frozen ? 'App (gebundeld)' : 'Ontwikkeling']);
+    return rows;
+  }
+
+  function renderAboutInfo() {
+    const info = aboutAppInfo();
+    const versionEl = document.getElementById('aboutVersion');
+    if (versionEl) versionEl.textContent = info.version;
+    const grid = document.getElementById('aboutInfo');
+    if (grid) {
+      grid.innerHTML = aboutRows(info)
+        .map(([label, value]) =>
+          `<span class="about-label">${escapeHtml(label)}</span><span class="about-value">${escapeHtml(String(value))}</span>`)
+        .join('');
+    }
+    const contact = document.getElementById('aboutContactBody');
+    if (contact) {
+      const parts = [];
+      if (SUPPORT_EMAIL) parts.push(`E-mail: <a href="mailto:${escapeHtml(SUPPORT_EMAIL)}">${escapeHtml(SUPPORT_EMAIL)}</a>`);
+      if (SUPPORT_URL) parts.push(`Helpdesk: <a href="${escapeHtml(SUPPORT_URL)}" target="_blank" rel="noopener">${escapeHtml(SUPPORT_URL)}</a>`);
+      parts.push('Bij een probleem: gebruik "Kopieer systeeminfo" en stuur dit samen met het logbestand naar de beheerder.');
+      contact.innerHTML = parts.join('<br>');
+    }
+  }
+
+  function buildSupportInfoText() {
+    const info = aboutAppInfo();
+    const lines = [`PixelTracker ${info.version}`, `Platform: ${info.platform || 'onbekend'}`];
+    if (info.dataDir) lines.push(`Gegevensmap: ${info.dataDir}`);
+    if (info.logFile) lines.push(`Logbestand: ${info.logFile}`);
+    if (info.backupDir) lines.push(`Back-ups: ${info.backupDir}`);
+    lines.push(`Bestand: ${currentSaveName || 'nog niet opgeslagen'}`);
+    if (window.currentDatabasePath) lines.push(`Pad: ${window.currentDatabasePath}`);
+    return lines.join('\n');
+  }
+
+  function copySupportInfo() {
+    const text = buildSupportInfoText();
+    const done = () => uiToast('Systeeminfo gekopieerd naar het klembord.');
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
+        return;
+      }
+    } catch (e) {}
+    fallbackCopy(text, done);
+  }
+
+  function fallbackCopy(text, done) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      done();
+    } catch (e) {
+      uiAlert('Kon de systeeminfo niet kopiëren.');
+    }
+  }
+
+  function openDesktopScheme(host) {
+    if (window.__pixelTrackerDesktop) {
+      try { location.href = 'pixeltracker://' + host; return; } catch (e) {}
+    }
+    uiAlert('Deze functie is alleen beschikbaar in de desktop-app.');
+  }
+
+  function openAboutModal() {
+    renderAboutInfo();
+    aboutModalOverlay.classList.add('show');
+  }
+  function closeAboutModal() { aboutModalOverlay.classList.remove('show'); }
+
+  document.getElementById('menuAbout').addEventListener('click', () => { closeAllMenus(); openAboutModal(); });
+  document.getElementById('menuOpenLog').addEventListener('click', () => { closeAllMenus(); openDesktopScheme('openlog'); });
+  document.getElementById('menuOpenDataFolder').addEventListener('click', () => { closeAllMenus(); openDesktopScheme('opendata'); });
+  document.getElementById('menuRestoreBackup').addEventListener('click', () => { closeFileMenu(); openDesktopScheme('restorebackup'); });
+  document.getElementById('aboutCloseBtn').addEventListener('click', closeAboutModal);
+  document.getElementById('aboutCopyInfoBtn').addEventListener('click', copySupportInfo);
+  document.getElementById('aboutOpenLogBtn').addEventListener('click', () => openDesktopScheme('openlog'));
+  document.getElementById('aboutOpenDataBtn').addEventListener('click', () => openDesktopScheme('opendata'));
+  aboutModalOverlay.addEventListener('click', (e) => { if (e.target.id === 'aboutModalOverlay') closeAboutModal(); });
+  document.addEventListener('keydown', (e) => {
+    if (!aboutModalOverlay.classList.contains('show')) return;
+    if (e.key === 'Escape') { e.preventDefault(); closeAboutModal(); }
+  });
 
   const quickEditModalOverlay = document.getElementById('quickEditModalOverlay');
   const quickEditModalTitle = document.getElementById('quickEditModalTitle');
@@ -7292,6 +7470,8 @@
   const sessionsMenuDropdownEl = document.getElementById('sessionsMenuDropdown');
   const shortcutsMenuBtnEl = document.getElementById('shortcutsMenuBtn');
   const shortcutsMenuDropdownEl = document.getElementById('shortcutsMenuDropdown');
+  const helpMenuBtnEl = document.getElementById('helpMenuBtn');
+  const helpMenuDropdownEl = document.getElementById('helpMenuDropdown');
 
   function closeAllMenus() {
     fileMenuDropdown.classList.remove('show');
@@ -7304,6 +7484,8 @@
     sessionsMenuBtnEl.classList.remove('open');
     shortcutsMenuDropdownEl.classList.remove('show');
     shortcutsMenuBtnEl.classList.remove('open');
+    helpMenuDropdownEl.classList.remove('show');
+    helpMenuBtnEl.classList.remove('open');
   }
 
   // Sluit het Bestand-menu volledig: zowel de dropdown (.show) als de
@@ -7389,12 +7571,21 @@
       if (!isOpen) { shortcutsMenuDropdownEl.classList.add('show'); shortcutsMenuBtnEl.classList.add('open'); }
     });
   });
+  helpMenuBtnEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    menuBtnToggle(() => {
+      const isOpen = helpMenuDropdownEl.classList.contains('show');
+      closeAllMenus();
+      if (!isOpen) { helpMenuDropdownEl.classList.add('show'); helpMenuBtnEl.classList.add('open'); }
+    });
+  });
   document.addEventListener('click', () => { closeAllMenus(); });
   fileMenuDropdown.addEventListener('click', (e) => e.stopPropagation());
   libraryMenuDropdown.addEventListener('click', (e) => e.stopPropagation());
   usersMenuDropdownEl.addEventListener('click', (e) => e.stopPropagation());
   sessionsMenuDropdownEl.addEventListener('click', (e) => e.stopPropagation());
   shortcutsMenuDropdownEl.addEventListener('click', (e) => e.stopPropagation());
+  helpMenuDropdownEl.addEventListener('click', (e) => e.stopPropagation());
 
   document.getElementById('menuUndo').addEventListener('click', () => {
     if (undoStack.length === 0) return;
@@ -8691,6 +8882,9 @@
   renderSessionMenuHint();
   renderAll();
   showStartupChoice();
+  try {
+    if (localStorage.getItem(APP_TAB_KEY) === 'sessie') openSessionsManager();
+  } catch (e) {}
 })();
 </script>
 </body>

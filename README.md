@@ -45,3 +45,40 @@ Voor een MSI-installer installeer je ook WiX Toolset 3 (`winget install WiXTools
 
 Resultaat:
 - `dist\PixelTracker_V3.0.31_Beta_Windows11.msi`
+
+## Code-signing en notarisatie (optioneel)
+
+Zonder certificaten bouwt het project gewoon ongewijzigd (unsigned). Voor
+distributie buiten de eigen organisatie zijn ondertekende builds nodig; beide
+buildscripts schakelen dit automatisch in zodra de juiste variabelen zijn gezet.
+
+### macOS
+
+1. Zorg voor een **Developer ID Application**-certificaat in de sleutelhanger.
+2. Sla een notarisatie-profiel op:
+   - `xcrun notarytool store-credentials pixeltracker-notary --apple-id "..." --team-id "..." --password "app-specifiek-wachtwoord"`
+3. Bouw met:
+   - `export PIXELTRACKER_SIGN_IDENTITY="Developer ID Application: Naam (TEAMID)"`
+   - `export PIXELTRACKER_NOTARY_PROFILE="pixeltracker-notary"`
+   - `./build_macos.sh`
+
+De app wordt ondertekend met hardened runtime + `build/entitlements.macos.plist`,
+genotariseerd en gestapeld (zowel de `.app` als de `.dmg`).
+
+### Windows
+
+1. `$env:PIXELTRACKER_WIN_CERT = "C:\pad\cert.pfx"` en
+   `$env:PIXELTRACKER_WIN_CERT_PASSWORD = "geheim"`
+   (of `$env:PIXELTRACKER_WIN_CERT_THUMBPRINT` voor een certificaat in de store).
+2. Bouw met `.\build_windows.ps1`.
+
+Het binaire bestand wordt met `signtool` ondertekend (SHA-256 + tijdstempel).
+
+## Logboek en back-ups
+
+- Logboek (roterend, o.a. crashes en JS-fouten):
+  `~/Library/Application Support/PixelTracker/logs/pixeltracker.log`
+- Automatische back-ups van databases (laatste 10 per bestand):
+  `~/Library/Application Support/PixelTracker/backups/`
+- Herstellen via het menu **Bestand → Back-ups herstellen...** of bekijk de
+  paden in **Help → Over PixelTracker...** (met "Kopieer systeeminfo").

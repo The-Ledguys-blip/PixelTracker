@@ -4,14 +4,17 @@ import os
 import sys
 import tempfile
 import json
+import logging
+import threading
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from datetime import datetime
 import shutil
 import argparse
 
-from PyQt6.QtCore import QEvent, QEventLoop, QPoint, QSize, Qt, QTimer, QUrl, pyqtSignal as Signal
-from PyQt6.QtGui import QGuiApplication, QIcon, QNativeGestureEvent, QWheelEvent
-from PyQt6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox
+from PyQt6.QtCore import QEvent, QEventLoop, QPoint, QSettings, QSize, Qt, QTimer, QUrl, pyqtSignal as Signal
+from PyQt6.QtGui import QDesktopServices, QGuiApplication, QIcon, QNativeGestureEvent, QWheelEvent
+from PyQt6.QtWidgets import QApplication, QFileDialog, QInputDialog, QMainWindow, QMessageBox
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineDownloadRequest, QWebEngineProfile, QWebEnginePage, QWebEngineSettings
 
@@ -52,6 +55,87 @@ def app_data_dir() -> Path:
 
 
 APP_DATA_DIR = app_data_dir()
+
+LOGGER_NAME = "pixeltracker"
+LOG_FILE = APP_DATA_DIR / "logs" / "pixeltracker.log"
+BACKUP_DIR = APP_DATA_DIR / "backups"
+BACKUP_KEEP = 10
+ORG_NAME = "PixelTracker"
+
+
+def log_file_path() -> Path:
+    return LOG_FILE
+
+
+def backup_dir() -> Path:
+    return BACKUP_DIR
+
+
+def get_logger() -> logging.Logger:
+    return logging.getLogger(LOGGER_NAME)
+
+
+def setup_logging() -> logging.Logger:
+    """Roterende crash-/foutenlog in de app-data-map (Application Support).
+
+    Schrijft naar `PixelTracker/logs/pixeltracker.log`, roteert bij ~1 MB
+    (5 oude exemplaren) en legt ook onverwerkte Python-excepties en
+    JS-consolefouten vast, zodat crashes na te lopen zijn zonder de app opnieuw
+    te starten.
+    """
+    logger = logging.getLogger(LOGGER_NAME)
+    if getattr(logger, "_pixeltracker_configured", False):
+        return logger
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+    try:
+        log_file_path().parent.mkdir(parents=True, exist_ok=True)
+        handler = RotatingFileHandler(
+            str(log_file_path()), maxBytes=1_000_000, backupCount=5, encoding="utf-8"
+        )
+        handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s  %(levelname)-7s  %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+            )
+        )
+        handler.setLevel(logging.INFO)
+        logger.addHandler(handler)
+    except Exception:
+        pass
+    logger._pixeltracker_configured = True  # type: ignore[attr-defined]
+    _install_excepthooks(logger)
+    logger.info("=== PixelTracker gestart (Python %s op %s) ===", sys.version.split()[0], sys.platform)
+    return logger
+
+
+def _install_excepthooks(logger: logging.Logger) -> None:
+    def _main_hook(exc_type, exc, tb):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc, tb)
+            return
+        logger.error("Onverwerkte fout", exc_info=(exc_type, exc, tb))
+
+    sys.excepthook = _main_hook
+    try:
+        def _thread_hook(args):
+            name = getattr(args.thread, "name", "?") if args.thread else "?"
+            logger.error(
+                "Onverwerkte fout in thread %s",
+                name,
+                exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+            )
+        threading.excepthook = _thread_hook
+    except Exception:
+        pass
+
+
+def open_path_in_os(target: Path) -> None:
+    """Opent een bestand of map met de standaard-app van het besturingssysteem."""
+    try:
+        url = QUrl.fromLocalFile(str(target))
+        QDesktopServices.openUrl(url)
+    except Exception as exc:  # pragma: no cover
+        get_logger().warning("Kon %s niet openen: %r", target, exc)
 
 
 BRIDGE_SCRIPT = r"""
@@ -148,7 +232,8 @@ class PixelTrackerWindow(QMainWindow):
     def __init__(self, page_path: Path, auto_sample_export: bool = False) -> None:
         super().__init__()
         self.setWindowTitle(APP_TITLE)
-        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self._settings = QSettings(ORG_NAME, APP_TITLE)
+        self._restore_geometry()
         self._allow_close = False
         self._close_poll_timer: QTimer | None = None
         self._auto_sample_export = auto_sample_export
@@ -162,6 +247,44 @@ class PixelTrackerWindow(QMainWindow):
         self.webview.titleChanged.connect(self.on_page_title_changed)
         self.webview.sampleExportRequested.connect(self.trigger_sample_export)
         self.webview.load(QUrl.fromLocalFile(str(page_path.resolve())))
+
+    def _default_window_size(self) -> QSize:
+        screen_geo = QGuiApplication.primaryScreen().availableGeometry()
+        width = min(WINDOW_WIDTH, screen_geo.width())
+        height = min(WINDOW_HEIGHT, screen_geo.height())
+        return QSize(max(900, width), max(700, height))
+
+    def _restore_geometry(self) -> None:
+        """Herstelt de laatst gebruikte vensterpositie/-grootte (QSettings).
+
+        Zonder bewaarde geometrie wordt het venster op het beschikbare scherm
+        gemaximaliseerd; een opgeslagen staat (gemaximaliseerd/verkleind) krijgt
+        voorrang.
+        """
+        restored = False
+        try:
+            geo = self._settings.value("window/geometry")
+            if geo is not None:
+                restored = bool(self.restoreGeometry(geo))
+        except Exception:
+            restored = False
+        if not restored:
+            size = self._default_window_size()
+            self.resize(size)
+        try:
+            state = self._settings.value("window/state")
+            if state is not None:
+                self.restoreState(state)
+        except Exception:
+            pass
+
+    def _save_geometry(self) -> None:
+        try:
+            self._settings.setValue("window/geometry", self.saveGeometry())
+            self._settings.setValue("window/state", self.saveState())
+            self._settings.sync()
+        except Exception:
+            pass
 
     def event(self, event: QEvent) -> bool:
         t = int(event.type())
@@ -311,11 +434,13 @@ class PixelTrackerWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         if self._allow_close:
+            self._save_geometry()
             event.accept()
             return
 
         decision = self._request_close_decision()
         if decision in {"close_clean", "discard_close"}:
+            self._save_geometry()
             event.accept()
             return
         if decision == "pending":
@@ -341,13 +466,49 @@ class PixelTrackerPage(QWebEnginePage):
         self._view = view
 
     def acceptNavigationRequest(self, url: QUrl, nav_type, is_main_frame: bool) -> bool:  # type: ignore[override]
-        if url.scheme() == "pixeltracker" and url.host() == "export":
-            QTimer.singleShot(0, self._view.export_current_report_to_pdf)
-            return False
-        if url.scheme() == "pixeltracker" and url.host() == "openfile":
-            QTimer.singleShot(0, self._view.open_database_from_disk)
-            return False
+        if url.scheme() == "pixeltracker":
+            host = url.host()
+            if host == "export":
+                QTimer.singleShot(0, self._view.export_current_report_to_pdf)
+                return False
+            if host == "openfile":
+                QTimer.singleShot(0, self._view.open_database_from_disk)
+                return False
+            if host == "openlog":
+                QTimer.singleShot(0, lambda: open_path_in_os(log_file_path()))
+                return False
+            if host == "opendata":
+                QTimer.singleShot(0, lambda: open_path_in_os(APP_DATA_DIR))
+                return False
+            if host == "restorebackup":
+                QTimer.singleShot(0, self._view.restore_backup_dialog)
+                return False
         return super().acceptNavigationRequest(url, nav_type, is_main_frame)
+
+    def javaScriptConsoleMessage(self, level, message, line_number, source_id) -> None:  # type: ignore[override]
+        """Stuurt JS-consolemeldingen (incl. onverwerkte JS-fouten) naar het logbestand."""
+        try:
+            levels = {
+                QWebEnginePage.JavaScriptConsoleMessageLevel.InfoMessageLevel: logging.DEBUG,
+                QWebEnginePage.JavaScriptConsoleMessageLevel.WarningMessageLevel: logging.WARNING,
+                QWebEnginePage.JavaScriptConsoleMessageLevel.ErrorMessageLevel: logging.ERROR,
+            }
+            py_level = levels.get(level, logging.DEBUG)
+            source = str(source_id or "inline")
+            if source.startswith("file://"):
+                source = source.rsplit("/", 1)[-1]
+            get_logger().log(py_level, "JS[%s:%s] %s", source, line_number, str(message)[:2000])
+        except Exception:
+            pass
+
+    def renderProcessTerminated(self, status, exit_code) -> None:  # type: ignore[override]
+        try:
+            get_logger().error(
+                "Renderproces gestopt: status=%s exitcode=%s", status, exit_code
+            )
+        except Exception:
+            pass
+        super().renderProcessTerminated(status, exit_code)
 
 
 class PixelTrackerWebView(QWebEngineView):
@@ -725,32 +886,132 @@ class PixelTrackerWebView(QWebEngineView):
         return f"{cleaned}.pdf"
 
     @staticmethod
-    def _backup_saved_db(target_path: Path, keep: int = 10) -> Path | None:
-        """Maak na een bewezen .ptdb-schrijfactie meteen een versie-back-up ernaast.
+    def _backup_saved_db(target_path: Path, keep: int = BACKUP_KEEP) -> Path | None:
+        """Maak na een bewezen .ptdb-schrijfactie een versie-back-up.
 
-        Bewaart de laatste `keep` back-ups van dezelfde database in dezelfde
-        map (naam: `<bestand>_backup_<YYYYMMDD-HHMMSS>.ptdb`) en ruimt oudere
-        exemplaren op.
+        Bewaart de laatste `keep` back-ups in de centrale app-data-map
+        (`Application Support/PixelTracker/backups`, naam:
+        `<bestand>_backup_<YYYYMMDD-HHMMSS>.ptdb`) en ruimt oudere exemplaren op.
+        De back-up staat bewust buiten de projectmap, zodat een per ongeluk
+        verwijderde of overschreven database altijd terug te halen is via
+        "Back-ups herstellen...".
         """
         try:
             if not target_path.exists() or not target_path.is_file():
                 return None
-            if not self._is_db_ext(target_path.suffix):
+            if not PixelTrackerWebView._is_db_ext(target_path.suffix):
                 return None
-            backup_dir = target_path.parent
-            stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
-            backup = backup_dir / f"{target_path.stem}_backup_{stamp}.ptdb"
+            backup_dir().mkdir(parents=True, exist_ok=True)
+            # Microseconden in de naam: elke back-up is uniek én de bestandsnaam
+            # sorteert lexicografisch gelijk aan chronologisch (belangrijk omdat
+            # mtime bij snelle opeenvolgende opslagen gelijk kan zijn).
+            stamp = datetime.now().strftime('%Y%m%d-%H%M%S-%f')
+            backup = backup_dir() / f"{target_path.stem}_backup_{stamp}.ptdb"
+            counter = 1
+            while backup.exists():
+                backup = backup_dir() / f"{target_path.stem}_backup_{stamp}-{counter:03d}.ptdb"
+                counter += 1
             shutil.copy2(target_path, backup)
             pattern = f"{target_path.stem}_backup_*.ptdb"
-            backups = sorted(backup_dir.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+            # Op naam sorteren (niet op mtime): de bestandsnaam bevat de
+            # tijdstempel + zero-padded teller, dus lexicografisch = chronologisch
+            # en deterministisch, ook bij meerdere back-ups binnen één seconde.
+            backups = sorted(backup_dir().glob(pattern), key=lambda p: p.name, reverse=True)
             for old in backups[keep:]:
                 try:
                     old.unlink(missing_ok=True)
                 except Exception:
                     pass
+            get_logger().info("Back-up gemaakt: %s", backup)
             return backup
-        except Exception:
+        except Exception as exc:
+            get_logger().warning("Back-up maken mislukt voor %s: %r", target_path, exc)
             return None
+
+    @staticmethod
+    def _list_backups(current_db: Path | None = None) -> list[Path]:
+        """Alle beschikbare .ptdb-back-ups, nieuwste eerst.
+
+        Naast de centrale map worden ook eventuele back-ups naast de huidige
+        database meegenomen (oudere releases schreven die ernaast).
+        """
+        found: list[Path] = []
+        seen: set[str] = set()
+
+        def _collect(folder: Path, pattern: str) -> None:
+            if not folder.is_dir():
+                return
+            for path in folder.glob(pattern):
+                try:
+                    key = str(path.resolve())
+                except Exception:
+                    key = str(path)
+                if key in seen or not path.is_file():
+                    continue
+                seen.add(key)
+                found.append(path)
+
+        _collect(backup_dir(), "*_backup_*.ptdb")
+        if current_db is not None:
+            _collect(current_db.parent, f"{current_db.stem}_backup_*.ptdb")
+        found.sort(key=lambda p: p.name, reverse=True)
+        return found
+
+    def restore_backup_dialog(self) -> None:
+        """Toont een keuzelijst met beschikbare back-ups en herstelt de gekozen versie.
+
+        De inhoud wordt in de app geladen (de gebruiker ziet de herstelde versie
+        meteen); pas bij een volgende 'Opslaan' wordt de database overschreven.
+        """
+        current = self._database_save_path
+        backups = self._list_backups(current)
+        if not backups:
+            QMessageBox.information(
+                self,
+                "Back-ups herstellen",
+                "Er zijn nog geen back-ups gevonden.\n\n"
+                f"Back-ups worden automatisch gemaakt bij elke opslag en bewaard in:\n{backup_dir()}",
+            )
+            return
+
+        labels = []
+        for path in backups:
+            try:
+                stamp = datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+            except Exception:
+                stamp = "?"
+            labels.append(f"{stamp}  —  {path.name}")
+
+        choice, ok = QInputDialog.getItem(
+            self, "Back-ups herstellen", "Kies een versie om te herstellen:", labels, 0, False
+        )
+        if not ok or not choice:
+            return
+        try:
+            index = labels.index(choice)
+        except ValueError:
+            return
+        chosen = backups[index]
+        try:
+            content = chosen.read_text(encoding="utf-8")
+        except Exception as exc:
+            QMessageBox.warning(self, "Back-ups herstellen", f"Kon de back-up niet lezen:\n{exc}")
+            return
+
+        target = current if (current and PixelTrackerWebView._is_db_ext(current.suffix)) else chosen
+        self._database_save_path = target
+        get_logger().info("Back-up hersteld: %s → %s", chosen, target)
+        self.page().runJavaScript(
+            "window.__pixelTrackerLoadDatabaseContent && window.__pixelTrackerLoadDatabaseContent("
+            f"{json.dumps(content)}, {json.dumps(str(target))});"
+        )
+        QTimer.singleShot(
+            400,
+            lambda: self.page().runJavaScript(
+                "window.uiToast && window.uiToast("
+                f"'Back-up hersteld: {chosen.name}');"
+            ),
+        )
 
     @staticmethod
     def _safe_folder_name(raw: str, fallback: str = "database_exports") -> str:
@@ -1091,6 +1352,7 @@ class PixelTrackerWebView(QWebEngineView):
             pass
         if ok:
             self.page().runJavaScript(BRIDGE_SCRIPT)
+            self._inject_app_info()
             # Telemetrie: coördinaten van menuknoppen dumpen zodat een externe
             # test (cliclick) het echte menu met echte muisklikken kan bedienen.
             self.page().runJavaScript(
@@ -1113,6 +1375,21 @@ class PixelTrackerWebView(QWebEngineView):
 
     def _log_menu_rects(self, value) -> None:
         self._db_trace(f"MENU_RECTS text={value}")
+
+    def _inject_app_info(self) -> None:
+        """Geeft de frontend de app-info (paden, platform) voor het Over-venster."""
+        info = {
+            "appName": APP_TITLE,
+            "dataDir": str(APP_DATA_DIR),
+            "logFile": str(log_file_path()),
+            "backupDir": str(backup_dir()),
+            "platform": sys.platform,
+            "frozen": bool(getattr(sys, "_MEIPASS", False)),
+        }
+        try:
+            self.page().runJavaScript(f"window.__pixelTrackerInfo = {json.dumps(info)};")
+        except Exception:
+            pass
 
     def _start_desktop_poller(self) -> None:
         if self._save_poll_timer is not None:
@@ -1286,20 +1563,15 @@ def main() -> int:
 
     app = QApplication(sys.argv)
     app.setApplicationDisplayName(APP_TITLE)
+    app.setOrganizationName(ORG_NAME)
+    app.setApplicationName(APP_TITLE)
+    setup_logging()
     icon = icon_file()
     if icon.exists():
         app.setWindowIcon(QIcon(str(icon.resolve())))
 
-    # Vul het beschikbare scherm zo volledig mogelijk: availableGeometry houdt al
-    # rekening met de menubalk en het Dock, dus dit is geen fullscreen-modus maar
-    # een venster dat tot aan de schermranden loopt (WINDOW_* zijn ruime maxima).
-    screen_geo = QGuiApplication.primaryScreen().availableGeometry()
-    width = min(WINDOW_WIDTH, screen_geo.width())
-    height = min(WINDOW_HEIGHT, screen_geo.height())
-
     page = persistent_html_file()
     win = PixelTrackerWindow(page, auto_sample_export=args.sample_export)
-    win.resize(max(900, width), max(700, height))
     win.show()
 
     if args.sample_export:
