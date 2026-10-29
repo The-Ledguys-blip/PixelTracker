@@ -230,6 +230,32 @@ class ExportPreviewLayoutTests(unittest.TestCase):
         self.assertIn(".export-report-meta-inline", html)
         self.assertIn("border-radius: 999px;", html)
 
+    def test_ptdb_merge_menu_modal_and_safety_contract(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        html = (repo_root / "assets" / "pixel_repair_app.html").read_text(encoding="utf-8")
+        desktop = (repo_root / "src" / "pixel_repair_desktop.py").read_text(encoding="utf-8")
+
+        # Menubalk-knop naast Help + bijbehorende modal met twee bestandskiezers.
+        self.assertIn('id="mergeMenuBtn"', html)
+        self.assertIn(">PTDB samenvoegen<", html)
+        self.assertIn('id="mergeModalOverlay"', html)
+        self.assertIn('id="mergeFileA"', html)
+        self.assertIn('id="mergeFileB"', html)
+        self.assertIn('id="mergeConfirmBtn"', html)
+        self.assertIn("function mergeDatabaseStates(", html)
+        self.assertIn("function loadMergedDatabase(", html)
+        self.assertIn("window.__pixelTrackerMergeDatabases = mergeDatabaseStates;", html)
+
+        # Nieuwe bestandsnaam verplicht: originelen blijven onaangetast.
+        self.assertIn("setCurrentDatabasePath('');", html)
+        self.assertIn("exportDatabaseJson(suggestedName, 'save_as')", html)
+        self.assertIn("openDesktopScheme('resetdbpath')", html)
+        self.assertIn('if host == "resetdbpath":', desktop)
+        self.assertIn("def forget_database_path(self)", desktop)
+
+        # Teruggekomen panelen worden na het samenvoegen opnieuw berekend.
+        self.assertIn("const returning = computeReturningRepairs();", html)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -775,6 +775,29 @@
   .about-contact-body { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
   .about-contact-body a { color: var(--accent); text-decoration: none; }
   .about-actions { flex-wrap: wrap; }
+  .merge-modal { width: 640px; max-width: 94vw; }
+  .merge-pickers { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 4px; }
+  .merge-pick {
+    border: 1px solid var(--border-soft); border-radius: 10px; padding: 10px 12px;
+    background: var(--chip-bg); display: flex; flex-direction: column; gap: 6px;
+  }
+  .merge-pick-title { font-size: 11px; font-weight: 700; }
+  .merge-pick-btn { font-size: 11px; padding: 5px 10px; align-self: flex-start; }
+  .merge-pick-info { font-size: 11px; color: var(--text-muted); line-height: 1.45; word-break: break-word; }
+  .merge-pick-info.loaded { color: var(--text); }
+  .merge-summary {
+    display: none; margin-top: 12px; padding: 10px 12px; font-size: 11.5px; line-height: 1.55;
+    border: 1px solid var(--border-soft); border-radius: 10px; background: var(--panel-bg);
+  }
+  .merge-summary.show { display: block; }
+  .merge-summary ul { margin: 6px 0 0; padding-left: 18px; }
+  .merge-summary li { margin: 2px 0; }
+  .merge-summary .merge-warn { color: #b45309; font-weight: 600; }
+  .merge-note { margin-top: 10px; font-size: 10.5px; color: var(--text-muted); line-height: 1.5; }
+  .merge-error {
+    display: none; margin-top: 10px; padding: 8px 10px; font-size: 11px; color: #dc2626;
+    background: rgba(220,38,38,.08); border: 1px solid rgba(220,38,38,.25); border-radius: 8px;
+  }
   .startup-modal { width: 430px; padding: 22px; }
   .startup-kicker {
     color: var(--accent);
@@ -1587,6 +1610,9 @@
       <button id="menuOpenDataFolder">Gegevensmap openen</button>
     </div>
   </div>
+  <div class="menu-wrap">
+    <button class="menu-trigger" id="mergeMenuBtn" title="Twee databases samenvoegen tot een nieuwe database">PTDB samenvoegen</button>
+  </div>
 </div>
 <div class="app-tabs" id="appTabs">
   <button type="button" class="app-tab-btn active" data-app-tab="home">Home</button>
@@ -2070,6 +2096,34 @@
       <button id="aboutOpenLogBtn">Logbestand openen</button>
       <button id="aboutOpenDataBtn">Gegevensmap openen</button>
       <button id="aboutCloseBtn" class="primary">Sluiten</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="mergeModalOverlay" role="dialog" aria-modal="true" aria-labelledby="mergeTitle">
+  <div class="modal merge-modal">
+    <h3 id="mergeTitle">PTDB samenvoegen</h3>
+    <p class="modal-subtitle">Voeg twee databases samen tot een nieuwe database. Alle modules, reparaties, tijden, gebruikers en sessies worden overgenomen. De originele bestanden blijven ongewijzigd.</p>
+    <div class="merge-pickers">
+      <div class="merge-pick">
+        <div class="merge-pick-title">Database 1</div>
+        <button type="button" class="merge-pick-btn" id="mergePickABtn">Bestand kiezen...</button>
+        <div class="merge-pick-info" id="mergeInfoA">Nog geen bestand gekozen</div>
+        <input type="file" id="mergeFileA" accept=".ptdb,.json,application/json" style="display:none">
+      </div>
+      <div class="merge-pick">
+        <div class="merge-pick-title">Database 2</div>
+        <button type="button" class="merge-pick-btn" id="mergePickBBtn">Bestand kiezen...</button>
+        <div class="merge-pick-info" id="mergeInfoB">Nog geen bestand gekozen</div>
+        <input type="file" id="mergeFileB" accept=".ptdb,.json,application/json" style="display:none">
+      </div>
+    </div>
+    <div class="merge-summary" id="mergeSummary"></div>
+    <div class="merge-note">Presets zijn app-breed en blijven behouden. Teruggekomen panelen worden na het samenvoegen opnieuw gecontroleerd.</div>
+    <div class="merge-error" id="mergeError" style="display:none"></div>
+    <div class="modal-actions">
+      <button type="button" id="mergeCancelBtn">Annuleren</button>
+      <button type="button" id="mergeConfirmBtn" class="primary" disabled>Samenvoegen</button>
     </div>
   </div>
 </div>
@@ -7763,6 +7817,414 @@
       renderAll();
       closeFileMenu();
     }, { title: 'Nieuwe database', confirmText: 'Openen', danger: true });
+  });
+
+  // === PTDB samenvoegen =================================================
+  // Voegt twee databases (A en B) samen tot één nieuwe database. Alles wordt
+  // overgenomen: modules, reparaties (incl. pixels/tijden), sessies en
+  // gebruikers. Bij eenzelfde serienummer worden de reparaties van B aan de
+  // bestaande module van A toegevoegd — hetzelfde principe als de bestaande
+  // dubbel-SN-merge bij het aanmaken van een module. Presets/library zitten
+  // niet in een .ptdb en blijven app-breed behouden.
+  const mergeModalOverlay = document.getElementById('mergeModalOverlay');
+  const mergeFileAInput = document.getElementById('mergeFileA');
+  const mergeFileBInput = document.getElementById('mergeFileB');
+  const mergeInfoAEl = document.getElementById('mergeInfoA');
+  const mergeInfoBEl = document.getElementById('mergeInfoB');
+  const mergeSummaryEl = document.getElementById('mergeSummary');
+  const mergeErrorEl = document.getElementById('mergeError');
+  const mergeConfirmBtn = document.getElementById('mergeConfirmBtn');
+  let mergeFileData = { A: null, B: null };
+
+  function normalizeMergeDb(raw) {
+    const src = (raw && typeof raw === 'object') ? raw : {};
+    const modules = {};
+    if (src.modules && typeof src.modules === 'object') {
+      Object.keys(src.modules).forEach(key => {
+        const m = src.modules[key];
+        if (!m || typeof m !== 'object') return;
+        const id = String(m.id || key || uid());
+        const repairs = (Array.isArray(m.repairs) ? m.repairs : [])
+          .filter(r => r && typeof r === 'object')
+          .map(r => ({
+            ...r,
+            id: String(r.id || uid()),
+            pixels: Array.isArray(r.pixels)
+              ? r.pixels.filter(p => Array.isArray(p) && p.length >= 2).map(p => [Number(p[0]), Number(p[1])])
+              : []
+          }));
+        modules[id] = { ...m, id, repairs, updatedAt: m.updatedAt || nowISO() };
+      });
+    }
+    const sessions = (Array.isArray(src.sessions) ? src.sessions : [])
+      .filter(s => s && typeof s === 'object')
+      .map(s => ({
+        ...s,
+        id: String(s.id || uid()),
+        moduleIds: Array.isArray(s.moduleIds) ? s.moduleIds.map(String) : [],
+        repairIds: Array.isArray(s.repairIds) ? s.repairIds.map(String) : []
+      }));
+    const users = (Array.isArray(src.users) ? src.users : [])
+      .filter(u => u && typeof u === 'object')
+      .map(u => ({ ...u, id: String(u.id || uid()) }));
+    return {
+      activeId: src.activeId ? String(src.activeId) : null,
+      activeSessionId: src.activeSessionId ? String(src.activeSessionId) : null,
+      currentUser: src.currentUser ? String(src.currentUser) : null,
+      modules,
+      sessions,
+      users
+    };
+  }
+
+  function mergeDatabaseStats(raw) {
+    const db = normalizeMergeDb(raw);
+    const modules = Object.values(db.modules);
+    let repairs = 0;
+    modules.forEach(m => { repairs += m.repairs.length; });
+    return {
+      modules: modules.length,
+      repairs,
+      sessions: db.sessions.length,
+      users: db.users.length,
+      sns: new Set(modules.map(m => String(m.sn || '').trim()).filter(Boolean))
+    };
+  }
+
+  function mergeDatabaseStates(rawA, rawB) {
+    const A = normalizeMergeDb(rawA);
+    const B = normalizeMergeDb(rawB);
+    const merged = {
+      activeId: null,
+      modules: {},
+      sessions: [],
+      activeSessionId: null,
+      users: [],
+      currentUser: null
+    };
+
+    // 1) Gebruikers: unie op naam + initialen; id's blijven uniek.
+    const userKey = u => String(u.name || '').trim().toLowerCase() + '|' + String(u.initials || '').trim().toLowerCase();
+    const usedUserIds = new Set(A.users.map(u => u.id));
+    const userByKey = new Map();
+    A.users.forEach(u => {
+      merged.users.push({ ...u });
+      const k = userKey(u);
+      if (!userByKey.has(k)) userByKey.set(k, u.id);
+    });
+    const bUserMap = new Map();
+    B.users.forEach(u => {
+      const k = userKey(u);
+      if (userByKey.has(k)) {
+        bUserMap.set(u.id, userByKey.get(k));
+        return;
+      }
+      let id = u.id;
+      while (usedUserIds.has(id)) id = uid();
+      usedUserIds.add(id);
+      merged.users.push({ ...u, id });
+      userByKey.set(k, id);
+      bUserMap.set(u.id, id);
+    });
+
+    // 2) Sessies van B krijgen een eigen (uniek) id; onthoud de mapping zodat
+    //    de reparaties van B naar de juiste sessie blijven wijzen.
+    const usedSessionIds = new Set(A.sessions.map(s => s.id));
+    const bSessionMap = new Map();
+    B.sessions.forEach(s => {
+      let id = s.id;
+      while (usedSessionIds.has(id)) id = uid();
+      usedSessionIds.add(id);
+      bSessionMap.set(s.id, id);
+    });
+
+    // 3) Modules van A overnemen (met eigen reparatie-id's als bezet).
+    const usedModuleIds = new Set(Object.keys(A.modules));
+    const usedRepairIds = new Set();
+    Object.values(A.modules).forEach(m => m.repairs.forEach(r => usedRepairIds.add(r.id)));
+    Object.values(A.modules).forEach(m => {
+      merged.modules[m.id] = {
+        ...m,
+        repairs: m.repairs.map(r => ({ ...r, pixels: r.pixels.map(p => [p[0], p[1]]) }))
+      };
+    });
+
+    // 4) Modules van B toevoegen; bij een bestaand serienummer samenvoegen.
+    const moduleBySn = new Map();
+    Object.values(merged.modules).forEach(m => {
+      const sn = String(m.sn || '').trim();
+      if (sn && !moduleBySn.has(sn)) moduleBySn.set(sn, m.id);
+    });
+    const bModuleMap = new Map();
+    const bRepairMap = new Map();
+    Object.values(B.modules).forEach(m => {
+      const sn = String(m.sn || '').trim();
+      const duplicateId = sn ? moduleBySn.get(sn) : null;
+      let targetId;
+      if (duplicateId && merged.modules[duplicateId]) {
+        targetId = duplicateId;
+      } else {
+        let id = m.id;
+        while (usedModuleIds.has(id)) id = uid();
+        usedModuleIds.add(id);
+        merged.modules[id] = { ...m, id, repairs: [], updatedAt: m.updatedAt || nowISO() };
+        targetId = id;
+        if (sn) moduleBySn.set(sn, id);
+      }
+      bModuleMap.set(m.id, targetId);
+      const target = merged.modules[targetId];
+      if (!Array.isArray(target.repairs)) target.repairs = [];
+      m.repairs.forEach(r => {
+        let rid = r.id;
+        while (usedRepairIds.has(rid)) rid = uid();
+        usedRepairIds.add(rid);
+        const copy = { ...r, id: rid, pixels: r.pixels.map(p => [p[0], p[1]]) };
+        if (copy.sessionId && bSessionMap.has(String(copy.sessionId))) {
+          copy.sessionId = bSessionMap.get(String(copy.sessionId));
+        }
+        bRepairMap.set(r.id, rid);
+        target.repairs.push(copy);
+      });
+      if (duplicateId && targetId === duplicateId) target.updatedAt = nowISO();
+    });
+
+    // 5) Sessies overnemen, met hermapte module- en reparatie-id's.
+    A.sessions.forEach(s => {
+      merged.sessions.push({ ...s, moduleIds: s.moduleIds.slice(), repairIds: s.repairIds.slice() });
+    });
+    B.sessions.forEach(s => {
+      merged.sessions.push({
+        ...s,
+        id: bSessionMap.get(s.id),
+        moduleIds: s.moduleIds.map(id => bModuleMap.get(id)).filter(Boolean),
+        repairIds: s.repairIds.map(id => bRepairMap.get(id)).filter(Boolean)
+      });
+    });
+
+    // 6) Actieve module/gebruiker bepalen; sessie blijft neutraal (alle sessies).
+    merged.activeId = (A.activeId && merged.modules[A.activeId]) ? A.activeId : null;
+    if (!merged.activeId && B.activeId && bModuleMap.has(B.activeId)) {
+      merged.activeId = bModuleMap.get(B.activeId);
+    }
+    if (!merged.activeId) {
+      const ids = Object.keys(merged.modules);
+      merged.activeId = ids.length ? ids[0] : null;
+    }
+    merged.activeSessionId = null;
+    merged.currentUser = A.currentUser || null;
+    if (!merged.currentUser && B.currentUser && bUserMap.has(B.currentUser)) {
+      merged.currentUser = bUserMap.get(B.currentUser);
+    }
+    return merged;
+  }
+
+  function suggestMergeName(nameA, nameB) {
+    const a = stripDbExt(nameA) || 'database';
+    const b = stripDbExt(nameB) || 'database';
+    let base = a + ' + ' + b;
+    base = base.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
+    if (base.length > 90) base = base.slice(0, 90).trim();
+    return base || 'samengevoegde database';
+  }
+
+  function setMergeError(message) {
+    if (!mergeErrorEl) return;
+    if (!message) {
+      mergeErrorEl.textContent = '';
+      mergeErrorEl.style.display = 'none';
+      return;
+    }
+    mergeErrorEl.textContent = message;
+    mergeErrorEl.style.display = 'block';
+  }
+
+  function describeMergeFile(slot) {
+    const data = mergeFileData[slot];
+    if (!data) return 'Nog geen bestand gekozen';
+    const stats = mergeDatabaseStats(data.raw);
+    return data.name + DB_EXT + ' — ' + stats.modules + ' modules, ' + stats.repairs +
+      ' reparaties, ' + stats.sessions + ' sessies';
+  }
+
+  function refreshMergeUi() {
+    if (!mergeInfoAEl || !mergeInfoBEl) return;
+    mergeInfoAEl.textContent = describeMergeFile('A');
+    mergeInfoBEl.textContent = describeMergeFile('B');
+    mergeInfoAEl.classList.toggle('loaded', !!mergeFileData.A);
+    mergeInfoBEl.classList.toggle('loaded', !!mergeFileData.B);
+    const both = !!(mergeFileData.A && mergeFileData.B);
+    mergeConfirmBtn.disabled = !both;
+    if (!both) {
+      mergeSummaryEl.classList.remove('show');
+      mergeSummaryEl.innerHTML = '';
+      return;
+    }
+    const statsA = mergeDatabaseStats(mergeFileData.A.raw);
+    const statsB = mergeDatabaseStats(mergeFileData.B.raw);
+    const merged = mergeDatabaseStates(mergeFileData.A.raw, mergeFileData.B.raw);
+    const mergedModules = Object.keys(merged.modules).length;
+    let mergedRepairs = 0;
+    Object.values(merged.modules).forEach(m => { mergedRepairs += (m.repairs || []).length; });
+    const duplicateSns = [...statsA.sns].filter(sn => statsB.sns.has(sn));
+    const rows = [
+      '<div><b>Samenvoegen levert:</b> ' + mergedModules + ' modules, ' + mergedRepairs +
+        ' reparaties, ' + merged.sessions.length + ' sessies, ' + merged.users.length + ' gebruikers</div>'
+    ];
+    if (duplicateSns.length) {
+      rows.push('<ul><li class="merge-warn">' + duplicateSns.length +
+        ' serienummer(s) komen in beide databases voor: die modules worden samengevoegd en hun reparaties toegevoegd.</li></ul>');
+    }
+    mergeSummaryEl.innerHTML = rows.join('');
+    mergeSummaryEl.classList.add('show');
+  }
+
+  function readMergeFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Kon "' + file.name + '" niet lezen.'));
+      reader.onload = () => {
+        let parsed = null;
+        try {
+          parsed = JSON.parse(String(reader.result || ''));
+        } catch (e) {
+          parsed = null;
+        }
+        if (!parsed || typeof parsed !== 'object' || !parsed.modules || typeof parsed.modules !== 'object') {
+          reject(new Error('"' + file.name + '" is geen geldige PTDB-database.'));
+          return;
+        }
+        resolve({
+          name: stripDbExt(file.name) || 'database',
+          fileName: file.name,
+          fileKey: [file.name, file.size, file.lastModified].join('|'),
+          raw: parsed
+        });
+      };
+      reader.readAsText(file);
+    });
+  }
+
+  function handleMergeFileChosen(slot, input) {
+    const file = input.files && input.files[0];
+    input.value = '';
+    if (!file) return;
+    setMergeError('');
+    readMergeFile(file).then(data => {
+      mergeFileData[slot] = data;
+      refreshMergeUi();
+    }).catch(err => {
+      mergeFileData[slot] = null;
+      refreshMergeUi();
+      setMergeError(err && err.message ? err.message : 'Kon het bestand niet lezen.');
+    });
+  }
+
+  function openMergeModal() {
+    mergeFileData = { A: null, B: null };
+    setMergeError('');
+    refreshMergeUi();
+    mergeModalOverlay.classList.add('show');
+  }
+  function closeMergeModal() {
+    mergeModalOverlay.classList.remove('show');
+    setMergeError('');
+  }
+
+  function loadMergedDatabase(merged, suggestedName, options) {
+    const opts = options || {};
+    pushHistory();
+    state = merged;
+    const ids = Object.keys(state.modules);
+    if (!state.activeId || !state.modules[state.activeId]) state.activeId = ids.length ? ids[0] : null;
+    state.activeSessionId = null;
+    if (Array.isArray(state.users) && state.users.length) {
+      state.currentUser = normalizeCurrentUserId(state.currentUser, state.users);
+    }
+    selected.clear();
+    previewRepairs = [];
+    // Nieuw bestand: nooit de naam of het pad van een origineel aanhouden.
+    setCurrentSaveName('');
+    setCurrentDatabasePath('');
+    setAutoSaveEnabled(true);
+    if (window.__pixelTrackerDesktop) openDesktopScheme('resetdbpath');
+    save(true);
+    syncLibraryFromModules();
+    renderLibraryPresetDropdowns();
+    renderAll();
+    refreshSessionViews();
+
+    let repairs = 0;
+    Object.values(state.modules).forEach(m => { repairs += ((m && m.repairs) || []).length; });
+    const returning = computeReturningRepairs();
+    const returningSessions = new Set(returning.map(r => r.sessionId)).size;
+    let message = 'Databases samengevoegd: ' + ids.length + ' modules, ' + repairs +
+      ' reparaties en ' + getSessions().length + ' sessies.';
+    message += returning.length
+      ? ' Teruggekomen: ' + returning.length + ' reparatie(s) in ' + returningSessions + ' sessie(s).'
+      : ' Geen teruggekomen panelen gevonden.';
+    message += ' Kies nu een nieuwe bestandsnaam; de originele bestanden blijven ongewijzigd.';
+
+    if (opts.skipSavePrompt) return;
+
+    openAppDialog({
+      title: 'PTDB samenvoegen',
+      message,
+      confirmText: 'Nieuwe bestandsnaam kiezen',
+      showCancel: false,
+      onConfirm: () => {
+        closeAppDialog();
+        exportDatabaseJson(suggestedName, 'save_as');
+      }
+    });
+  }
+
+  function performMerge() {
+    if (!mergeFileData.A || !mergeFileData.B) return;
+    if (mergeFileData.A.fileKey === mergeFileData.B.fileKey) {
+      setMergeError('Kies twee verschillende bestanden.');
+      return;
+    }
+    let merged;
+    try {
+      merged = mergeDatabaseStates(mergeFileData.A.raw, mergeFileData.B.raw);
+    } catch (err) {
+      setMergeError('Samenvoegen mislukt: ' + (err && err.message ? err.message : String(err)));
+      return;
+    }
+    const suggested = suggestMergeName(mergeFileData.A.name, mergeFileData.B.name);
+    closeMergeModal();
+    const run = () => loadMergedDatabase(merged, suggested);
+    if (hasUnsavedManualSave()) {
+      uiConfirm(
+        'De huidige database heeft niet-opgeslagen wijzigingen. Die gaan verloren als je nu samenvoegt. Toch doorgaan?',
+        run,
+        { title: 'PTDB samenvoegen', confirmText: 'Toch samenvoegen', danger: true }
+      );
+      return;
+    }
+    run();
+  }
+
+  window.__pixelTrackerMergeDatabases = mergeDatabaseStates;
+  window.__pixelTrackerMergeStats = mergeDatabaseStats;
+  window.__pixelTrackerApplyMergedDatabase = loadMergedDatabase;
+  window.__pixelTrackerSuggestMergeName = suggestMergeName;
+
+  document.getElementById('mergeMenuBtn').addEventListener('click', () => {
+    closeAllMenus();
+    openMergeModal();
+  });
+  document.getElementById('mergePickABtn').addEventListener('click', () => mergeFileAInput.click());
+  document.getElementById('mergePickBBtn').addEventListener('click', () => mergeFileBInput.click());
+  mergeFileAInput.addEventListener('change', () => handleMergeFileChosen('A', mergeFileAInput));
+  mergeFileBInput.addEventListener('change', () => handleMergeFileChosen('B', mergeFileBInput));
+  document.getElementById('mergeCancelBtn').addEventListener('click', closeMergeModal);
+  mergeConfirmBtn.addEventListener('click', performMerge);
+  mergeModalOverlay.addEventListener('click', (e) => {
+    if (e.target.id === 'mergeModalOverlay') closeMergeModal();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && mergeModalOverlay.classList.contains('show')) closeMergeModal();
   });
 
   const recentFilesModalOverlay = document.getElementById('recentFilesModalOverlay');

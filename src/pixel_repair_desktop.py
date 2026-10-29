@@ -483,6 +483,9 @@ class PixelTrackerPage(QWebEnginePage):
             if host == "restorebackup":
                 QTimer.singleShot(0, self._view.restore_backup_dialog)
                 return False
+            if host == "resetdbpath":
+                QTimer.singleShot(0, self._view.forget_database_path)
+                return False
         return super().acceptNavigationRequest(url, nav_type, is_main_frame)
 
     def javaScriptConsoleMessage(self, level, message, line_number, source_id) -> None:  # type: ignore[override]
@@ -748,6 +751,17 @@ class PixelTrackerWebView(QWebEngineView):
         except Exception as exc:  # pragma: no cover
             self._db_trace(f"_do_db_save error: {exc!r}")
             self._notify_download_result(False)
+
+    def forget_database_path(self) -> None:
+        """Vergeet het bekende databasepad (na een PTDB-samenvoeging).
+
+        De samengevoegde database is een nieuw bestand: de originelen mogen nooit
+        stil overschreven worden. Door het pad te wissen valt een volgende
+        'save' terug op 'save_as' (native paneel) in plaats van een stille
+        overschrijving van de vorige database.
+        """
+        self._database_save_path = None
+        self._db_trace("FORGET-DBPATH")
 
     def _db_save_as_dialog(self, default_path: str) -> str:
         """Native mac-savepaneel als LOSSTAAND modal venster (geen sheet).

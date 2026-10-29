@@ -154,6 +154,23 @@ class HtmlPathTests(unittest.TestCase):
         self.assertIsNone(valid("klant.ptdb"))
         self.assertIsNone(valid("/tmp/klant.csv"))
 
+    def test_forget_database_path_clears_the_known_save_target(self) -> None:
+        module = self.load_desktop_module()
+
+        class FakeView:
+            _database_save_path = Path("/Users/test/Documents/db/klant.ptdb")
+            traces: list[str] = []
+
+            def _db_trace(self, msg: str) -> None:
+                self.traces.append(msg)
+
+        view = FakeView()
+        module.PixelTrackerWebView.forget_database_path(view)
+
+        # Na een PTDB-samenvoeging mag een 'save' nooit stil het origineel raken.
+        self.assertIsNone(view._database_save_path)
+        self.assertEqual(view.traces, ["FORGET-DBPATH"])
+
 
 if __name__ == "__main__":
     unittest.main()
