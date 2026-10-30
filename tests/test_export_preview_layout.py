@@ -289,6 +289,30 @@ class ExportPreviewLayoutTests(unittest.TestCase):
         # Desktop-poller stapelt geen runJavaScript-calls tijdens zware renders.
         self.assertIn("self._desktop_poll_in_flight", desktop)
 
+    def test_ptdb_carries_library_and_presets(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        html = (repo_root / "assets" / "pixel_repair_app.html").read_text(encoding="utf-8")
+
+        # De library (presets, bedrijven, tegeltypes) gaat mee in het .ptdb-bestand.
+        self.assertIn("function libraryExportSnapshot()", html)
+        self.assertIn(
+            "const payload = Object.assign({}, state, { library: libraryExportSnapshot() });", html
+        )
+
+        # Bij openen (desktop, browser, recente bestanden) wordt de library
+        # overgenomen; `state` blijft library-vrij voor localStorage.
+        self.assertIn("function adoptLibraryFromDatabase(", html)
+        self.assertIn("function adoptDatabasePayload(", html)
+        self.assertIn("delete stateOnly.library;", html)
+        self.assertEqual(html.count("state = adoptDatabasePayload(parsed);"), 3)
+
+        # Samenvoegen neemt de presets van beide bestanden (en de lokale) mee.
+        self.assertIn("mergeLibraryInto(merged.library, library);", html)
+        self.assertIn("mergeLibraryInto(merged.library, A.library);", html)
+        self.assertIn("mergeLibraryInto(merged.library, B.library);", html)
+        self.assertIn("state = adoptDatabasePayload(merged);", html)
+        self.assertIn("presets: db.library.modulePresets.length,", html)
+
 
 if __name__ == "__main__":
     unittest.main()

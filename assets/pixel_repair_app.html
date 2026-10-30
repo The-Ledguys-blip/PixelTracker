@@ -1625,7 +1625,7 @@
 <header class="app-header">
   <h1>PixelTracker</h1>
   <div class="header-meta">
-    <span id="buildVersionBadge" class="build-badge">Build V3.0.34 Beta</span>
+    <span id="buildVersionBadge" class="build-badge">Build V3.0.35 Beta</span>
     <span class="save-status" title="Opslagstatus">
       <span id="currentSaveStatusDot" class="save-status-dot unsaved" aria-hidden="true"></span>
       <span id="currentSaveName" class="hint" style="margin:0; white-space:nowrap;">Bestand: nog niet opgeslagen</span>
@@ -2132,7 +2132,7 @@
 (function() {
   const STORAGE_KEY = 'pixelRepairApp_v2';
   // Bump this on every release update (V2.1, V2.2, V2.3, ...).
-    const BUILD_VERSION = 'V3.0.34 Beta';
+    const BUILD_VERSION = 'V3.0.35 Beta';
   const MANUAL_SAVE_SNAPSHOT_KEY = 'pixelRepairApp_lastManualSaveSnapshot_v1';
   const RECENT_FILES_KEY = 'pixelRepairApp_recentFiles_v1';
   const CURRENT_SAVE_NAME_KEY = 'pixelRepairApp_currentSaveName_v1';
@@ -2558,6 +2558,84 @@
     safeSetItem(LIBRARY_KEY, snapshot);
     safeSetItem(LIBRARY_BACKUP_KEY, snapshot);
     safeSetItem(LAST_KNOWN_GOOD_LIBRARY_KEY, snapshot);
+  }
+
+  // De library (presets, bedrijven en tegeltypes) reist mee in het .ptdb-
+  // bestand. Zo werkt een database ook op een verse installatie of een andere
+  // computer met dezelfde presets.
+  function sanitizeLibrary(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const presets = Array.isArray(raw.modulePresets) ? raw.modulePresets : [];
+    return {
+      companies: uniqueSorted(Array.isArray(raw.companies) ? raw.companies : []),
+      tileTypes: uniqueSorted(Array.isArray(raw.tileTypes) ? raw.tileTypes : []),
+      modulePresets: presets
+        .filter(p => p && typeof p === 'object')
+        .map(sanitizeModulePreset)
+    };
+  }
+
+  // Twee presets met dezelfde instellingen zijn hetzelfde, ook als ze uit een
+  // andere database (en dus met een ander id) komen.
+  function presetSignature(preset) {
+    const p = preset || {};
+    return [
+      p.company, p.tileType, p.width, p.height, p.shaderWidth, p.shaderHeight,
+      (p.shaderCols || []).join(','), (p.shaderRows || []).join(','), p.batch ? '1' : '0'
+    ].map(v => String(v == null ? '' : v).trim().toLowerCase()).join('|');
+  }
+
+  function mergeLibraryInto(target, incoming) {
+    const src = sanitizeLibrary(incoming);
+    if (!src) return target;
+    target.companies = uniqueSorted([...(target.companies || []), ...src.companies]);
+    target.tileTypes = uniqueSorted([...(target.tileTypes || []), ...src.tileTypes]);
+    const presets = Array.isArray(target.modulePresets) ? target.modulePresets.slice() : [];
+    const knownIds = new Set(presets.map(p => String(p.id)));
+    const knownSignatures = new Set(presets.map(presetSignature));
+    src.modulePresets.forEach(preset => {
+      const signature = presetSignature(preset);
+      if (knownIds.has(String(preset.id)) || knownSignatures.has(signature)) return;
+      presets.push(preset);
+      knownIds.add(String(preset.id));
+      knownSignatures.add(signature);
+    });
+    target.modulePresets = presets;
+    return target;
+  }
+
+  function libraryExportSnapshot() {
+    return {
+      companies: (library.companies || []).slice(),
+      tileTypes: (library.tileTypes || []).slice(),
+      modulePresets: (library.modulePresets || []).map(preset => ({ ...preset }))
+    };
+  }
+
+  // Neemt de library uit een geopend databasebestand over. Bestaande presets
+  // blijven staan; alleen wat ontbreekt wordt toegevoegd.
+  function adoptLibraryFromDatabase(parsed) {
+    if (!parsed || typeof parsed !== 'object') return false;
+    const incoming = sanitizeLibrary(parsed.library);
+    if (!incoming) return false;
+    const before = JSON.stringify(library);
+    mergeLibraryInto(library, incoming);
+    if (JSON.stringify(library) === before) return false;
+    saveLibrary();
+    renderLibraryPresetDropdowns();
+    if (typeof renderPresetManagerLists === 'function') renderPresetManagerLists();
+    return true;
+  }
+
+  // Splitst een databasepayload in state en library. De library hoort niet in
+  // `state`, want dat gaat ook naar localStorage en de sessie-snapshots.
+  function adoptDatabasePayload(parsed) {
+    if (!parsed || typeof parsed !== 'object') return parsed;
+    if (!Object.prototype.hasOwnProperty.call(parsed, 'library')) return parsed;
+    adoptLibraryFromDatabase(parsed);
+    const stateOnly = Object.assign({}, parsed);
+    delete stateOnly.library;
+    return stateOnly;
   }
 
   function load() {
@@ -3133,7 +3211,9 @@
     if (saveInProgress && (now - saveInProgressAt) < 15000) return;
     saveInProgress = true;
     saveInProgressAt = now;
-    const json = JSON.stringify(state, null, 2);
+    // De presets/library horen bij de database en gaan mee in het bestand.
+    const payload = Object.assign({}, state, { library: libraryExportSnapshot() });
+    const json = JSON.stringify(payload, null, 2);
     window.__pixelTrackerCurrentDbJson = json;
     const blob = new Blob([json], { type: 'application/json' });
     const a = document.createElement('a');
@@ -3222,18 +3302,22 @@
   function applyLoadedDatabase(parsed, path) {
     window.__pixelTrackerDbgMark('applyLoadedDatabase');
     pushHistory();
-    state = parsed;
+    // Presets uit het bestand overnemen vóór de state wordt gezet; de library
+    // zelf blijft buiten `state`.
+    state = adoptDatabasePayload(parsed);
     const fileName = stripDbExt(String(path || 'database').split(/[\\/]/).pop());
     if (fileName) {
       setCurrentSaveName(fileName);
       setCurrentDatabasePath(path || '');
       setAutoSaveEnabled(true);
-      upsertRecentFileSnapshot(fileName, JSON.stringify(parsed), nowISO());
+      upsertRecentFileSnapshot(fileName, stateSnapshot(), nowISO());
     }
     const ids = Object.keys(state.modules);
     if (!state.activeId || !state.modules[state.activeId]) state.activeId = ids.length ? ids[0] : null;
     selected.clear();
     resetSessionViewLimits();
+    syncLibraryFromModules();
+    renderLibraryPresetDropdowns();
     save(true);
     markManualSaveSnapshot();
     renderAll();
@@ -8034,18 +8118,20 @@
         if (!parsed || typeof parsed.modules !== 'object') throw new Error('ongeldig bestand');
         uiConfirm('Huidige database vervangen door de inhoud van dit bestand?', () => {
           pushHistory();
-          state = parsed;
+          state = adoptDatabasePayload(parsed);
           const loadedName = stripDbExt(file && file.name);
           if (loadedName) {
             setCurrentSaveName(loadedName);
             setAutoSaveEnabled(true);
           }
-          if (loadedName) upsertRecentFileSnapshot(loadedName, JSON.stringify(parsed), nowISO());
+          if (loadedName) upsertRecentFileSnapshot(loadedName, stateSnapshot(), nowISO());
           const ids = Object.keys(state.modules);
           if (!state.activeId || !state.modules[state.activeId]) {
             state.activeId = ids.length ? ids[0] : null;
           }
           selected.clear();
+          syncLibraryFromModules();
+          renderLibraryPresetDropdowns();
           save(true);
           markManualSaveSnapshot();
           renderAll();
@@ -8126,7 +8212,8 @@
       currentUser: src.currentUser ? String(src.currentUser) : null,
       modules,
       sessions,
-      users
+      users,
+      library: sanitizeLibrary(src.library) || defaultLibrary()
     };
   }
 
@@ -8140,6 +8227,7 @@
       repairs,
       sessions: db.sessions.length,
       users: db.users.length,
+      presets: db.library.modulePresets.length,
       sns: new Set(modules.map(m => String(m.sn || '').trim()).filter(Boolean))
     };
   }
@@ -8153,8 +8241,15 @@
       sessions: [],
       activeSessionId: null,
       users: [],
-      currentUser: null
+      currentUser: null,
+      library: defaultLibrary()
     };
+
+    // 0) Presets/bedrijven/tegeltypes: unie van beide bestanden én de lokaal
+    //    aanwezige library, zodat er niets verloren gaat.
+    mergeLibraryInto(merged.library, library);
+    mergeLibraryInto(merged.library, A.library);
+    mergeLibraryInto(merged.library, B.library);
 
     // 1) Gebruikers: unie op naam + initialen; id's blijven uniek.
     const userKey = u => String(u.name || '').trim().toLowerCase() + '|' + String(u.initials || '').trim().toLowerCase();
@@ -8296,7 +8391,7 @@
     if (!data) return 'Nog geen bestand gekozen';
     const stats = mergeDatabaseStats(data.raw);
     return data.name + DB_EXT + ' — ' + stats.modules + ' modules, ' + stats.repairs +
-      ' reparaties, ' + stats.sessions + ' sessies';
+      ' reparaties, ' + stats.sessions + ' sessies, ' + stats.presets + ' presets';
   }
 
   function refreshMergeUi() {
@@ -8321,7 +8416,8 @@
     const duplicateSns = [...statsA.sns].filter(sn => statsB.sns.has(sn));
     const rows = [
       '<div><b>Samenvoegen levert:</b> ' + mergedModules + ' modules, ' + mergedRepairs +
-        ' reparaties, ' + merged.sessions.length + ' sessies, ' + merged.users.length + ' gebruikers</div>'
+        ' reparaties, ' + merged.sessions.length + ' sessies, ' + merged.users.length + ' gebruikers, ' +
+        merged.library.modulePresets.length + ' presets</div>'
     ];
     if (duplicateSns.length) {
       rows.push('<ul><li class="merge-warn">' + duplicateSns.length +
@@ -8386,7 +8482,8 @@
   function loadMergedDatabase(merged, suggestedName, options) {
     const opts = options || {};
     pushHistory();
-    state = merged;
+    // De samengevoegde library (presets van beide bestanden) wordt overgenomen.
+    state = adoptDatabasePayload(merged);
     const ids = Object.keys(state.modules);
     if (!state.activeId || !state.modules[state.activeId]) state.activeId = ids.length ? ids[0] : null;
     state.activeSessionId = null;
@@ -8491,7 +8588,7 @@
       if (!parsed || typeof parsed.modules !== 'object') throw new Error('ongeldig');
       uiConfirm('Huidige database vervangen door "' + item.label + '"?', () => {
         pushHistory();
-        state = parsed;
+        state = adoptDatabasePayload(parsed);
         setCurrentSaveName(item.label || currentSaveName);
         setCurrentDatabasePath(item.path || '');
         setAutoSaveEnabled(true);
