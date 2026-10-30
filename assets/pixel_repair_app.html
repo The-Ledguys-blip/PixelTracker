@@ -1625,7 +1625,7 @@
 <header class="app-header">
   <h1>PixelTracker</h1>
   <div class="header-meta">
-    <span id="buildVersionBadge" class="build-badge">Build V3.0.33 Beta</span>
+    <span id="buildVersionBadge" class="build-badge">Build V3.0.34 Beta</span>
     <span class="save-status" title="Opslagstatus">
       <span id="currentSaveStatusDot" class="save-status-dot unsaved" aria-hidden="true"></span>
       <span id="currentSaveName" class="hint" style="margin:0; white-space:nowrap;">Bestand: nog niet opgeslagen</span>
@@ -2132,7 +2132,7 @@
 (function() {
   const STORAGE_KEY = 'pixelRepairApp_v2';
   // Bump this on every release update (V2.1, V2.2, V2.3, ...).
-    const BUILD_VERSION = 'V3.0.33 Beta';
+    const BUILD_VERSION = 'V3.0.34 Beta';
   const MANUAL_SAVE_SNAPSHOT_KEY = 'pixelRepairApp_lastManualSaveSnapshot_v1';
   const RECENT_FILES_KEY = 'pixelRepairApp_recentFiles_v1';
   const CURRENT_SAVE_NAME_KEY = 'pixelRepairApp_currentSaveName_v1';
@@ -2205,7 +2205,7 @@
     return h > 0 ? `${h}u ${m}m` : `${m}m`;
   }
 
-  function sessionWorkDuration(session) {
+  function sessionWorkDuration(session, sessionRepairsArg) {
     if (!session) return null;
     const sRepIds = new Set(getSessionRepairIds(session));
     const evts = [];
@@ -2215,8 +2215,13 @@
       const t = r.updatedAt || r.ts || null;
       if (t) evts.push(Date.parse(t));
     };
-    Object.values(state.modules).forEach(m => (m.repairs || []).forEach(collect));
-    previewRepairs.forEach(collect);
+    if (Array.isArray(sessionRepairsArg)) {
+      sessionRepairsArg.forEach(collect);
+      previewRepairs.forEach(collect);
+    } else {
+      Object.values(state.modules).forEach(m => (m.repairs || []).forEach(collect));
+      previewRepairs.forEach(collect);
+    }
     if (evts.length < 2) return null;
     evts.sort((a, b) => a - b);
     const THREE_H = 3 * 3600 * 1000;
@@ -2236,8 +2241,8 @@
     };
   }
 
-  function sessionWorkLabel(session) {
-    const d = sessionWorkDuration(session);
+  function sessionWorkLabel(session, sessionRepairsArg) {
+    const d = sessionWorkDuration(session, sessionRepairsArg);
     if (d) {
       let label = fmtWorkDuration(d.active) + ' werken';
       if (d.wall - d.active > 5 * 60000) label += ' &middot; ' + fmtWorkDuration(d.wall) + ' totaal';
@@ -2245,11 +2250,11 @@
       label += ' &middot; ' + t(d.start) + ' → ' + t(d.end);
       return label;
     }
-    return sessionWorkDaysLabel(session);
+    return sessionWorkDaysLabel(session, sessionRepairsArg);
   }
 
   // Vallback voor oude databases zonder kloktijden: werken op datum-granulariteit.
-  function sessionWorkDaysLabel(session) {
+  function sessionWorkDaysLabel(session, sessionRepairsArg) {
     if (!session) return '';
     const sRepIds = new Set(getSessionRepairIds(session));
     const dates = new Set();
@@ -2258,8 +2263,13 @@
       if (!(sRepIds.has(r.id) || r.sessionId === session.id)) return;
       if (r.date) dates.add(r.date);
     };
-    Object.values(state.modules).forEach(m => (m.repairs || []).forEach(collect));
-    previewRepairs.forEach(collect);
+    if (Array.isArray(sessionRepairsArg)) {
+      sessionRepairsArg.forEach(collect);
+      previewRepairs.forEach(collect);
+    } else {
+      Object.values(state.modules).forEach(m => (m.repairs || []).forEach(collect));
+      previewRepairs.forEach(collect);
+    }
     const sorted = Array.from(dates).sort();
     if (sorted.length === 0) return '';
     const days = getDateStr(sorted[0]) + (sorted.length > 1 ? ' → ' + getDateStr(sorted[sorted.length - 1]) : '');
@@ -2330,8 +2340,8 @@
   let formSaveTimer = null;
 
   function writeFormMemorySnapshot(snapshot) {
-    localStorage.setItem(FORM_MEMORY_KEY, snapshot);
-    localStorage.setItem(FORM_MEMORY_BACKUP_KEY, snapshot);
+    safeSetItem(FORM_MEMORY_KEY, snapshot);
+    safeSetItem(FORM_MEMORY_BACKUP_KEY, snapshot);
   }
 
   function saveFormMemory(immediate) {
@@ -2545,9 +2555,9 @@
 
   function saveLibrary() {
     const snapshot = JSON.stringify(library);
-    localStorage.setItem(LIBRARY_KEY, snapshot);
-    localStorage.setItem(LIBRARY_BACKUP_KEY, snapshot);
-    localStorage.setItem(LAST_KNOWN_GOOD_LIBRARY_KEY, snapshot);
+    safeSetItem(LIBRARY_KEY, snapshot);
+    safeSetItem(LIBRARY_BACKUP_KEY, snapshot);
+    safeSetItem(LAST_KNOWN_GOOD_LIBRARY_KEY, snapshot);
   }
 
   function load() {
@@ -2668,13 +2678,80 @@
   let pendingStateSnapshot = null;
   let stateSaveTimer = null;
 
+  // localStorage is alleen sessieherstel/back-up; het .ptdb-bestand blijft
+  // leidend. Grote databases kunnen de opslagquota (~5 MB) vullen. Schrijffouten
+  // mogen de laad-/opslagflow nooit breken, dus alle schrijfacties zijn best-
+  // effort en de optionele kopieën krijgen een eigen budget.
+  const EXTRA_SNAPSHOT_SOFT_LIMIT_BYTES = 1024 * 1024;
+  // De primaire sessie-snapshot past niet boven ~5 miljoen tekens in de
+  // browserquota. Grotere databases worden alleen als .ptdb bewaard.
+  const PRIMARY_STATE_CHAR_LIMIT = 4500000;
+  const OPTIONAL_STATE_KEYS = [
+    LAST_SESSION_SNAPSHOT_KEY,
+    LAST_KNOWN_GOOD_STATE_KEY,
+    LAST_USED_FILE_SNAPSHOT_KEY,
+    MANUAL_SAVE_SNAPSHOT_KEY,
+    RECENT_FILES_KEY
+  ];
+
+  function storageByteSize(value) {
+    const str = String(value == null ? '' : value);
+    // Globale schatting: UTF-16 kost ongeveer twee bytes per teken.
+    return str.length * 2;
+  }
+
+  function withinExtraSnapshotBudget(value) {
+    return storageByteSize(value) <= EXTRA_SNAPSHOT_SOFT_LIMIT_BYTES;
+  }
+
+  function safeRemoveItem(key) {
+    try { localStorage.removeItem(key); } catch (e) {}
+  }
+
+  function safeSetItem(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Maakt ruimte vrij voor de primaire state: de optionele kopieën zijn
+  // herstelbaar uit het .ptdb-bestand en mogen wijken.
+  function freeLocalStorageSpace(keepKey) {
+    OPTIONAL_STATE_KEYS.forEach(key => {
+      if (key !== keepKey) safeRemoveItem(key);
+    });
+  }
+
+  function writeOptionalSnapshot(key, value) {
+    if (!withinExtraSnapshotBudget(value)) {
+      safeRemoveItem(key);
+      return false;
+    }
+    if (safeSetItem(key, value)) return true;
+    safeRemoveItem(key);
+    return false;
+  }
+
   function writeStateSnapshot(snapshot) {
-    localStorage.setItem(STORAGE_KEY, snapshot);
-    localStorage.setItem(LAST_SESSION_SNAPSHOT_KEY, snapshot);
+    if (String(snapshot).length > PRIMARY_STATE_CHAR_LIMIT) {
+      // Te groot voor localStorage: het .ptdb-bestand is de enige opslag.
+      safeRemoveItem(STORAGE_KEY);
+      safeRemoveItem(LAST_SESSION_SNAPSHOT_KEY);
+      safeRemoveItem(LAST_KNOWN_GOOD_STATE_KEY);
+      return;
+    }
+    if (!safeSetItem(STORAGE_KEY, snapshot)) {
+      freeLocalStorageSpace(STORAGE_KEY);
+      safeSetItem(STORAGE_KEY, snapshot);
+    }
+    writeOptionalSnapshot(LAST_SESSION_SNAPSHOT_KEY, snapshot);
     try {
       const parsed = JSON.parse(snapshot);
       if (parsed && typeof parsed === 'object' && parsed.modules && Object.keys(parsed.modules).length > 0) {
-        localStorage.setItem(LAST_KNOWN_GOOD_STATE_KEY, snapshot);
+        writeOptionalSnapshot(LAST_KNOWN_GOOD_STATE_KEY, snapshot);
       }
     } catch (e) {}
   }
@@ -2729,13 +2806,13 @@
     flushPendingStorageWrites();
     if (!startupChoicePending) {
       try {
-        localStorage.setItem(LAST_SESSION_SNAPSHOT_KEY, JSON.stringify(state));
+        writeOptionalSnapshot(LAST_SESSION_SNAPSHOT_KEY, JSON.stringify(state));
       } catch (e) {}
     }
     try {
       const libSnapshot = JSON.stringify(library || defaultLibrary());
-      localStorage.setItem(LIBRARY_KEY, libSnapshot);
-      localStorage.setItem(LIBRARY_BACKUP_KEY, libSnapshot);
+      safeSetItem(LIBRARY_KEY, libSnapshot);
+      safeSetItem(LIBRARY_BACKUP_KEY, libSnapshot);
     } catch (e) {}
     try {
       saveFormMemory(true);
@@ -2769,7 +2846,8 @@
 
   function saveRecentFiles(list) {
     try {
-      localStorage.setItem(RECENT_FILES_KEY, JSON.stringify(list.slice(0, 12)));
+      const payload = JSON.stringify(list.slice(0, 12));
+      if (withinExtraSnapshotBudget(payload)) safeSetItem(RECENT_FILES_KEY, payload);
     } catch (e) {}
   }
 
@@ -2790,7 +2868,10 @@
       librarySnapshot,
     };
     try {
-      localStorage.setItem(LAST_USED_FILE_SNAPSHOT_KEY, JSON.stringify(payload));
+      const raw = JSON.stringify(payload);
+      // Alleen voor compacte databases bewaren; grote bestanden worden bij
+      // het opstarten toch uit het .ptdb-bestand geladen.
+      if (withinExtraSnapshotBudget(raw)) safeSetItem(LAST_USED_FILE_SNAPSHOT_KEY, raw);
     } catch (e) {}
   }
 
@@ -2892,14 +2973,14 @@
 
   function markManualSaveSnapshot() {
     lastManualSaveSnapshot = dataSnapshot();
-    localStorage.setItem(MANUAL_SAVE_SNAPSHOT_KEY, lastManualSaveSnapshot);
+    writeOptionalSnapshot(MANUAL_SAVE_SNAPSHOT_KEY, lastManualSaveSnapshot);
     updateSaveStatusIndicator();
   }
 
   function setCurrentSaveName(name) {
     currentSaveName = String(name || '').trim();
     window.currentSaveName = currentSaveName;
-    localStorage.setItem(CURRENT_SAVE_NAME_KEY, currentSaveName);
+    safeSetItem(CURRENT_SAVE_NAME_KEY, currentSaveName);
     if (currentSaveName) {
       setLastUsedFileSnapshot(currentSaveName, stateSnapshot(), nowISO());
     }
@@ -3152,6 +3233,7 @@
     const ids = Object.keys(state.modules);
     if (!state.activeId || !state.modules[state.activeId]) state.activeId = ids.length ? ids[0] : null;
     selected.clear();
+    resetSessionViewLimits();
     save(true);
     markManualSaveSnapshot();
     renderAll();
@@ -4715,6 +4797,16 @@
 
   const ALL_SESSION_ID = '__ALL__';
   const sessionListSort = { key: 'date', dir: 'desc' };
+  // Lijsten in Sessiebeheer kunnen duizenden rijen bevatten. Rendering daarvan
+  // kost seconden; daarom renderen we in brokken met een "Toon meer"-knop.
+  const SESSION_REPAIR_PAGE_SIZE = 200;
+  const SESSION_CARD_ROW_LIMIT = 150;
+  // Boven deze omvang standaard ingeklapt: het volledig uittekenen van alle
+  // sessietabellen kost bij tienduizenden reparaties te veel tijd.
+  const SESSION_CARD_AUTO_COLLAPSE_THRESHOLD = 2500;
+  let sessionRepairListLimit = SESSION_REPAIR_PAGE_SIZE;
+  const sessionCardRowLimits = new Map();
+  const sessionCardExpanded = new Set();
 
   function sortSessionRepairs(repairs, key = sessionListSort.key, dir = sessionListSort.dir) {
     const list = Array.isArray(repairs) ? repairs.slice() : [];
@@ -4750,6 +4842,7 @@
       sessionListSort.key = key;
       sessionListSort.dir = key === 'date' ? 'desc' : 'asc';
     }
+    sessionRepairListLimit = SESSION_REPAIR_PAGE_SIZE;
     renderBookmarkList();
     renderSessionRepairsTab();
   }
@@ -4834,10 +4927,14 @@
     const repairs = [];
     Object.values(state.modules).forEach(m => {
       (m.repairs || []).forEach(r => {
-        repairs.push({ ...r, _moduleName: m.name, _moduleSN: m.sn, _moduleId: m.id, _moduleCompany: m.company });
+        const row = { ...r, _moduleName: m.name, _moduleSN: m.sn, _moduleId: m.id, _moduleCompany: m.company };
+        // Sorteersleutel één keer berekenen: dit voorkomt duizenden extra
+        // Date-parses bij grote databases.
+        row._sortMs = repairSortMs(row);
+        repairs.push(row);
       });
     });
-    return repairs.sort((a, b) => repairSortMs(b) - repairSortMs(a));
+    return repairs.sort((a, b) => b._sortMs - a._sortMs);
   }
 
   function getDateStr(iso) {
@@ -4857,6 +4954,7 @@
   // Sorteersleutel: datum + tijd. Zo komen reparaties van dezelfde dag op tijd
   // (nieuwste eerst) te staan; valt terug op updatedAt/ts als de datum ontbreekt.
   function repairSortMs(r) {
+    if (r && typeof r._sortMs === 'number') return r._sortMs;
     const datePart = String((r && r.date) || '');
     const clock = repairClock(r);
     if (datePart) {
@@ -4971,6 +5069,13 @@
     </div>`;
   }
 
+  function resetSessionViewLimits() {
+    sessionRepairListLimit = SESSION_REPAIR_PAGE_SIZE;
+    returnsListLimit = SESSION_REPAIR_PAGE_SIZE;
+    sessionCardRowLimits.clear();
+    sessionCardExpanded.clear();
+  }
+
   function renderSessionRepairsTab() {
     const wrap = document.getElementById("sessionRepairList");
     if (!wrap) return;
@@ -4980,7 +5085,8 @@
     if (repairs.length === 0) {
       html += '<div class="hint" style="padding:10px 4px;">Nog geen reparaties geregistreerd.</div>';
     } else {
-      repairs.forEach(r => {
+      const visible = repairs.slice(0, sessionRepairListLimit);
+      visible.forEach(r => {
         const bm = getBookmarkOfRepair(r);
         html += `<label class="session-repair-row">
           <input type="checkbox" class="repair-select" data-repair-id="${r.id}" ${selected.has(r.id) ? "checked" : ""} style="width:15px;height:15px;margin:0;">
@@ -4993,8 +5099,18 @@
           <span class="sr-bookmark">${bm ? `<span class="sr-bookmark-badge" title="Sessie: ${escapeHtml(bm)}">&#128278; ${escapeHtml(bm)}</span>` : ""}</span>
         </label>`;
       });
+      if (repairs.length > visible.length) {
+        html += `<div style="padding:10px 4px;"><button type="button" class="small" id="sessionRepairShowMoreBtn">Toon meer (${visible.length} van ${repairs.length})</button></div>`;
+      }
     }
     wrap.innerHTML = html;
+    const showMoreBtn = document.getElementById("sessionRepairShowMoreBtn");
+    if (showMoreBtn) {
+      showMoreBtn.addEventListener("click", () => {
+        sessionRepairListLimit += SESSION_REPAIR_PAGE_SIZE;
+        renderSessionRepairsTab();
+      });
+    }
     wrap.querySelectorAll('[data-repair-sort]').forEach(btn => {
       btn.addEventListener('click', () => onSessionSortClick(btn.dataset.repairSort));
     });
@@ -5174,8 +5290,17 @@
   function sessionsAllCollapsed() {
     const sessions = getSessions();
     if (sessions.length === 0) return false;
+    if (isLargeDataset()) return sessionCardExpanded.size === 0;
     const set = getSessionCollapsedSet();
     return sessions.every(s => set.has(s.id));
+  }
+  function datasetRepairCount() {
+    let n = 0;
+    Object.values(state.modules || {}).forEach(m => { n += (m.repairs || []).length; });
+    return n;
+  }
+  function isLargeDataset() {
+    return datasetRepairCount() > SESSION_CARD_AUTO_COLLAPSE_THRESHOLD;
   }
   function updateSessionCollapseAllLabel() {
     const btn = document.getElementById("sessionCollapseAllBtn");
@@ -5183,6 +5308,7 @@
   }
 
   let returnsCategoryCollapsed = false;
+  let returnsListLimit = SESSION_REPAIR_PAGE_SIZE;
   // Selectie van reparatieregels in Sessiebeheer (tab Sessies). Blijft bewaard
   // bij het hertekenen; enkel visueel, navigeren gaat via dubbelklikken.
   const sessionRepairSelection = new Set();
@@ -5195,10 +5321,55 @@
     const wrap = document.getElementById("sessionBookmarkList");
     const sessions = sortSessionsNewestFirst(getSessions());
     const allRepairs = getAllRepairsFlat();
-    const returningList = computeReturningRepairs();
+    const returningList = computeReturningRepairs(allRepairs);
     const returningKeys = new Set(returningList.map(rr => rr.sessionId + '|' + rr.repairId));
+    // Zelfde samenvatting als computeSessionReturns(), maar afgeleid uit de al
+    // berekende returningList: geen tweede pass over alle reparaties per sessie.
+    const returnsBySession = {};
+    returningList.forEach(rr => {
+      const sn = String(rr.sn || '').trim();
+      const panelKey = sn ? ('sn:' + sn) : ('mid:' + rr.moduleId);
+      const bucket = (returnsBySession[rr.sessionId] = returnsBySession[rr.sessionId] || {});
+      const item = (bucket[panelKey] = bucket[panelKey] || {
+        sn: rr.sn || '', name: rr.moduleName || '', company: rr.company || '', pixels: new Set(), prevDate: ''
+      });
+      item.pixels.add(rr.pixel);
+      if (rr.prevDate && rr.prevDate > item.prevDate) item.prevDate = rr.prevDate;
+    });
+    Object.keys(returnsBySession).forEach(sid => {
+      returnsBySession[sid] = Object.values(returnsBySession[sid])
+        .map(x => ({ sn: x.sn, name: x.name, company: x.company, repeatPixels: x.pixels.size, prevDate: x.prevDate }))
+        .sort((a, b) => b.repeatPixels - a.repeatPixels);
+    });
     let html = "";
+    // Eén keer de reparaties per sessie groeperen; dit voorkomt een volledige
+    // scan van alle reparaties per sessiekaart.
+    const repairsBySession = new Map();
+    const seenRepairIdsBySession = new Map();
+    sessions.forEach(s => {
+      repairsBySession.set(s.id, []);
+      seenRepairIdsBySession.set(s.id, new Set());
+    });
+    allRepairs.forEach(r => {
+      const bucket = repairsBySession.get(r.sessionId);
+      if (!bucket) return;
+      bucket.push(r);
+      seenRepairIdsBySession.get(r.sessionId).add(r.id);
+    });
+    const repairsById = new Map();
+    allRepairs.forEach(r => { if (!repairsById.has(r.id)) repairsById.set(r.id, r); });
+    sessions.forEach(s => {
+      const bucket = repairsBySession.get(s.id);
+      const seenIds = seenRepairIdsBySession.get(s.id);
+      getSessionRepairIds(s).forEach(id => {
+        if (seenIds.has(id)) return;
+        const r = repairsById.get(id);
+        if (r) { bucket.push(r); seenIds.add(id); }
+      });
+      bucket.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    });
     const isAllActive = isAllSession(state.activeSessionId);
+    const largeDataset = isLargeDataset();
     const totalMods = Object.keys(state.modules).length;
     html += `<div style="padding:10px 12px;border:2px solid ${isAllActive ? "var(--accent)" : "var(--border-soft)"};border-radius:10px;margin-bottom:10px;background:${isAllActive ? "var(--active-bg)" : "transparent"};">`;
     html += `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">`;
@@ -5215,7 +5386,8 @@
         html += `<thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;">`;
         html += `<th style="padding:4px 6px;">Datum</th><th style="padding:4px 6px;">Serienummer</th><th style="padding:4px 6px;">Module</th><th style="padding:4px 6px;">Pixel</th><th style="padding:4px 6px;">Type</th><th style="padding:4px 6px;">Wie</th><th style="padding:4px 6px;">Sessie</th><th style="padding:4px 6px;">Eerder op</th>`;
         html += `</tr></thead><tbody>`;
-        returningList.forEach(rr => {
+        const visibleReturns = returningList.slice(0, returnsListLimit);
+        visibleReturns.forEach(rr => {
           const goto = `window.__pixelTrackerShowRepairInMain('${rr.moduleId}','${rr.repairId}')`;
           const selCls = sessionRepairSelection.has(rr.sessionId + '|' + rr.repairId) ? ' session-repair-selected' : '';
           html += `<tr data-repair-id="${rr.repairId}" data-module-id="${rr.moduleId}" data-session-id="${rr.sessionId}" class="${selCls.trim()}" title="Klik om te selecteren, dubbelklik om in het hoofdscherm te tonen" style="border-top:1px solid var(--border-soft);font-size:12px;cursor:pointer;">`;
@@ -5230,6 +5402,9 @@
           html += `</tr>`;
         });
         html += `</tbody></table></div>`;
+        if (returningList.length > visibleReturns.length) {
+          html += `<div style="padding:8px 4px;"><button type="button" class="small" data-show-more-returns="1">Toon meer (${visibleReturns.length} van ${returningList.length})</button></div>`;
+        }
       }
     }
     html += `</div>`;
@@ -5240,17 +5415,19 @@
     }
     sessions.forEach(s => {
       const isActive = s.id === state.activeSessionId;
-      const sRepIds = getSessionRepairIds(s);
-      const sRepairs = allRepairs.filter(r => sRepIds.includes(r.id) || r.sessionId === s.id).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+      const sRepairs = repairsBySession.get(s.id) || [];
       const sRepairRows = sRepairs.filter(isRepairRow);
-      const sModuleCount = getSessionModuleObjs(s).length;
-      const sWork = sessionWorkLabel(s);
+      const sessionModuleIds = new Set(getSessionModuleIds(s));
+      sRepairs.forEach(r => sessionModuleIds.add(r._moduleId));
+      let sModuleCount = 0;
+      sessionModuleIds.forEach(id => { if (state.modules[id]) sModuleCount++; });
+      const sWork = sessionWorkLabel(s, sRepairs);
       const workHint = sWork ? ` &middot; <span title="Pauzes langer dan 3 uur tellen niet mee">${sWork}</span>` : '';
-      const sReturns = computeSessionReturns(s);
+      const sReturns = returnsBySession[s.id] || [];
       const returnBadge = sReturns.length
         ? ` <span class="session-return-badge" title="Teruggekomen op dezelfde pixel: ${escapeHtml(sReturns.map(r => r.sn || r.name).join(', '))}">&#8635; Teruggekomen${sReturns.length > 1 ? ' (' + sReturns.length + ')' : ''}</span>`
         : '';
-      const cardCollapsed = getSessionCollapsedSet().has(s.id);
+      const cardCollapsed = largeDataset ? !sessionCardExpanded.has(s.id) : getSessionCollapsedSet().has(s.id);
       html += `<div style="padding:10px 12px;border:2px solid ${isActive ? "var(--accent)" : "var(--border-soft)"};border-radius:10px;margin-bottom:10px;background:${isActive ? "var(--active-bg)" : "transparent"};">`;
       html += `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">`;
       html += `<span><button type="button" class="session-quick-toggle" style="vertical-align:middle;margin-right:6px;" data-toggle-card="${s.id}" title="${cardCollapsed ? "Sessie uitklappen" : "Sessie inklappen"}" aria-label="${cardCollapsed ? "Uitklappen" : "Inklappen"}">${cardCollapsed ? "&#9654;" : "&#9660;"}</button><strong style="font-size:14px;cursor:pointer;" title="Klik om te hernoemen" onclick="event.stopPropagation();window.__pixelTrackerRenameSession('${s.id}')">${escapeHtml(s.name)}</strong> <span class="hint" style="font-size:12px;">${getDateStr(s.createdAt)}${sessionClock(s) ? ' ' + sessionClock(s) : ''} &middot; ${sModuleCount} module${sModuleCount !== 1 ? "s" : ""} &middot; ${sRepairRows.length} reparatie${sRepairRows.length !== 1 ? "s" : ""}${workHint}</span>${returnBadge}${isActive ? ' <span style="color:var(--accent);font-size:12px;">&#9679; actief</span>' : ""}</span>`;
@@ -5266,6 +5443,8 @@
         html += `<div class="hint" style="padding:6px 0;font-size:12px;">Nog geen reparaties in deze sessie.</div>`;
       } else {
         const sortedRepairs = sortSessionRepairs(sRepairs, sessionListSort.key, sessionListSort.dir);
+        const cardLimit = sessionCardRowLimits.get(s.id) || SESSION_CARD_ROW_LIMIT;
+        const visibleRepairs = sortedRepairs.length > cardLimit ? sortedRepairs.slice(0, cardLimit) : sortedRepairs;
         const widths = getSessionColumnWidths();
         html += `
           <table class="session-sort-table">
@@ -5322,7 +5501,7 @@
             </thead>
             <tbody>
         `;
-        sortedRepairs.forEach(r => {
+        visibleRepairs.forEach(r => {
           const selCls = sessionRepairSelection.has(s.id + '|' + r.id) ? ' session-repair-selected' : '';
           html += `<tr data-repair-id="${r.id}" data-module-id="${r._moduleId}" data-session-id="${s.id}" class="${selCls.trim()}" title="Klik om te selecteren, dubbelklik om in het hoofdscherm te tonen" style="border-top:1px solid var(--border-soft);font-size:12px;cursor:pointer;">`;
           html += `<td data-col-key="sn" style="width:${widths.sn}px;min-width:${widths.sn}px;max-width:${widths.sn}px;padding:6px 6px;vertical-align:top;font-weight:600;">${r._moduleSN ? escapeHtml(r._moduleSN) : "—"}</td>`;
@@ -5337,6 +5516,9 @@
           html += `</tr>`;
         });
         html += `</tbody></table>`;
+        if (sortedRepairs.length > visibleRepairs.length) {
+          html += `<div style="padding:8px 4px;"><button type="button" class="small" data-show-more-card="${s.id}">Toon meer (${visibleRepairs.length} van ${sortedRepairs.length})</button></div>`;
+        }
       }
       html += `</div>`;
     });
@@ -5348,12 +5530,30 @@
         renderBookmarkList();
         return;
       }
+      if (e.target.closest('[data-show-more-returns]')) {
+        returnsListLimit += SESSION_REPAIR_PAGE_SIZE;
+        renderBookmarkList();
+        return;
+      }
       const t = e.target.closest('[data-toggle-card]');
       if (t) {
-        const set = getSessionCollapsedSet();
         const id = t.dataset.toggleCard;
-        if (set.has(id)) set.delete(id); else set.add(id);
-        saveSessionCollapsedSet(set);
+        if (largeDataset) {
+          if (sessionCardExpanded.has(id)) sessionCardExpanded.delete(id);
+          else sessionCardExpanded.add(id);
+        } else {
+          const set = getSessionCollapsedSet();
+          if (set.has(id)) set.delete(id); else set.add(id);
+          saveSessionCollapsedSet(set);
+        }
+        renderBookmarkList();
+        return;
+      }
+      const more = e.target.closest('[data-show-more-card]');
+      if (more) {
+        const id = more.dataset.showMoreCard;
+        const current = sessionCardRowLimits.get(id) || SESSION_CARD_ROW_LIMIT;
+        sessionCardRowLimits.set(id, current + SESSION_CARD_ROW_LIMIT);
         renderBookmarkList();
         return;
       }
@@ -5392,6 +5592,12 @@
   }
 
   document.getElementById("sessionCollapseAllBtn").addEventListener("click", () => {
+    if (isLargeDataset()) {
+      if (sessionCardExpanded.size === 0) getSessions().forEach(s => sessionCardExpanded.add(s.id));
+      else sessionCardExpanded.clear();
+      renderBookmarkList();
+      return;
+    }
     const set = getSessionCollapsedSet();
     if (sessionsAllCollapsed()) set.clear();
     else getSessions().forEach(s => set.add(s.id));
@@ -5447,12 +5653,13 @@
   // reparatie op datzelfde paneel. Panelen worden herkend via serienummer
   // (of, als dat ontbreekt, via module-id), zodat zowel samengevoegde als
   // losse modules met hetzelfde SN meetellen.
-  function computeSessionReturns(session) {
+  function computeSessionReturns(session, allRepairsArg) {
     if (!session) return [];
-    const sessionRepIds = getSessionRepairIds(session);
-    const inSession = r => sessionRepIds.includes(r.id) || r.sessionId === session.id;
+    const allRepairs = Array.isArray(allRepairsArg) ? allRepairsArg : getAllRepairsFlat();
+    const sessionRepIds = new Set(getSessionRepairIds(session));
+    const inSession = r => sessionRepIds.has(r.id) || r.sessionId === session.id;
     const panels = {};
-    getAllRepairsFlat().forEach(r => {
+    allRepairs.forEach(r => {
       if (!isRepairRow(r)) return;
       const sn = String(r._moduleSN || '').trim();
       const key = sn ? ('sn:' + sn) : ('mid:' + r._moduleId);
@@ -5495,38 +5702,54 @@
   // een reparatie in een sessie waarvan dezelfde pixel op hetzelfde paneel
   // eerder al gerepareerd was. Panelen worden herkend via serienummer (anders
   // via module-id). Bedoeld voor de categorie "Teruggekomen" in Sessiebeheer.
-  function computeReturningRepairs() {
-    const allRepairs = getAllRepairsFlat();
+  function computeReturningRepairs(allRepairsArg) {
+    const allRepairs = Array.isArray(allRepairsArg) ? allRepairsArg : getAllRepairsFlat();
+    // Eén pass over alle reparaties: per paneel (SN of module-id) en per pixel
+    // de eerdere reparaties bijhouden. Zo is dit O(repairs × pixels) in plaats
+    // van O(sessies × repairs × pixels) en blijft het snel bij grote databases.
     const pxIndex = {};
+    const metaByRepair = new Map();
     allRepairs.forEach(r => {
       if (!isRepairRow(r)) return;
       const sn = String(r._moduleSN || '').trim();
       const key = sn ? ('sn:' + sn) : ('mid:' + r._moduleId);
       const idx = (pxIndex[key] = pxIndex[key] || {});
       const ms = repairSortMs(r);
+      const entry = { ms, date: r.date };
+      metaByRepair.set(r, { key, ms });
       (r.pixels || []).forEach(px => {
         const pk = px[0] + ',' + px[1];
-        (idx[pk] = idx[pk] || []).push({ ms, date: r.date });
+        (idx[pk] = idx[pk] || []).push(entry);
       });
     });
+    Object.values(pxIndex).forEach(idx => {
+      Object.values(idx).forEach(list => list.sort((a, b) => a.ms - b.ms));
+    });
+
     const out = [];
     const seen = new Set();
     getSessions().forEach(s => {
+      const sRepIds = new Set(getSessionRepairIds(s));
       allRepairs.forEach(r => {
-        if (!isRepairRow(r) || !repairBelongsToSession(r, s)) return;
-        const sn = String(r._moduleSN || '').trim();
-        const key = sn ? ('sn:' + sn) : ('mid:' + r._moduleId);
-        const idx = pxIndex[key] || {};
-        const ms = repairSortMs(r);
+        if (!isRepairRow(r) || !(sRepIds.has(r.id) || r.sessionId === s.id)) return;
+        const meta = metaByRepair.get(r);
+        if (!meta) return;
+        const idx = pxIndex[meta.key] || {};
         (r.pixels || []).forEach(px => {
           const pk = px[0] + ',' + px[1];
-          const earlier = (idx[pk] || []).filter(e => e.ms < ms);
-          if (!earlier.length) return;
+          const list = idx[pk] || [];
+          let prevDate = '';
+          let hasEarlier = false;
+          for (let i = 0; i < list.length; i++) {
+            const e = list[i];
+            if (e.ms >= meta.ms) break;
+            hasEarlier = true;
+            if (e.date && e.date > prevDate) prevDate = e.date;
+          }
+          if (!hasEarlier) return;
           const dedup = s.id + '|' + r.id + '|' + pk;
           if (seen.has(dedup)) return;
           seen.add(dedup);
-          let prevDate = '';
-          earlier.forEach(e => { if (e.date && e.date > prevDate) prevDate = e.date; });
           out.push({
             sessionId: s.id, sessionName: s.name, sn: r._moduleSN || '',
             moduleId: r._moduleId, repairId: r.id,
@@ -5545,8 +5768,8 @@
     const session = getSessions().find(s => s.id === sessionId);
     if (!session) return null;
     const allRepairs = getAllRepairsFlat();
-    const sRepIds = getSessionRepairIds(session);
-    const repairs = allRepairs.filter(r => sRepIds.includes(r.id) || r.sessionId === session.id).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    const sRepIds = new Set(getSessionRepairIds(session));
+    const repairs = allRepairs.filter(r => sRepIds.has(r.id) || r.sessionId === session.id).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
     const repairRows = repairs.filter(isRepairRow);
     const modsBy = {};
     repairRows.forEach(r => {
@@ -7540,7 +7763,37 @@
     shortcutsMenuBtnEl.classList.remove('open');
     helpMenuDropdownEl.classList.remove('show');
     helpMenuBtnEl.classList.remove('open');
+    // De open-handlers voegen na deze functie .show toe; één frame later klopt
+    // de aria-status weer.
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(syncMenuAria);
   }
+
+  const MENU_PAIRS = [
+    [fileMenuBtn, fileMenuDropdown],
+    [libraryMenuBtn, libraryMenuDropdown],
+    [usersMenuBtnEl, usersMenuDropdownEl],
+    [sessionsMenuBtnEl, sessionsMenuDropdownEl],
+    [shortcutsMenuBtnEl, shortcutsMenuDropdownEl],
+    [helpMenuBtnEl, helpMenuDropdownEl]
+  ];
+  function syncMenuAria() {
+    MENU_PAIRS.forEach(([btn, dropdown]) => {
+      if (!btn || !dropdown) return;
+      btn.setAttribute('aria-haspopup', 'true');
+      btn.setAttribute('aria-expanded', dropdown.classList.contains('show') ? 'true' : 'false');
+    });
+  }
+  syncMenuAria();
+  // Escape sluit een open menubalk-menu en zet de focus terug op de knop.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const openDropdown = document.querySelector('.menu-dropdown.show');
+    if (!openDropdown) return;
+    const wrap = openDropdown.closest('.menu-wrap');
+    closeAllMenus();
+    const trigger = wrap && wrap.querySelector('.menu-trigger');
+    if (trigger) trigger.focus();
+  });
 
   // Sluit het Bestand-menu volledig: zowel de dropdown (.show) als de
   // trigger-knop (.open) synchroniseren, zodat de knop niet "open" blijft

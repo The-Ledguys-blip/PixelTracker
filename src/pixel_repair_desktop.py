@@ -6,6 +6,7 @@ import tempfile
 import json
 import logging
 import threading
+import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from datetime import datetime
@@ -529,6 +530,8 @@ class PixelTrackerWebView(QWebEngineView):
         self._database_save_path: Path | None = None
         self._db_open_polling = False
         self._db_save_pending = False
+        self._desktop_poll_in_flight = False
+        self._desktop_poll_started = 0.0
         self._save_poll_timer: QTimer | None = None
         self._last_db_save_dialog: QFileDialog | None = None
         self._debug_menu_rects = True
@@ -1417,6 +1420,13 @@ class PixelTrackerWebView(QWebEngineView):
     def _poll_desktop_request(self) -> None:
         if self._db_open_polling or self._db_save_pending:
             return
+        # Bij een zware render kan een vorige runJavaScript-callback nog lopen.
+        # Niet stapelen: dat kost onnodig CPU en houdt de UI bezig.
+        now = time.monotonic()
+        if self._desktop_poll_in_flight and (now - self._desktop_poll_started) < 2.0:
+            return
+        self._desktop_poll_in_flight = True
+        self._desktop_poll_started = now
         if self._debug_menu_rects:
             self.page().runJavaScript(
                 "window.__pixelTrackerDbgRects || '';",
@@ -1465,6 +1475,7 @@ class PixelTrackerWebView(QWebEngineView):
         self._db_trace(f"RECTS {value}")
 
     def _on_desktop_request_polled(self, which) -> None:
+        self._desktop_poll_in_flight = False
         if not isinstance(which, str) or not which:
             return
         if self._db_open_polling or self._db_save_pending:

@@ -256,6 +256,39 @@ class ExportPreviewLayoutTests(unittest.TestCase):
         # Teruggekomen panelen worden na het samenvoegen opnieuw berekend.
         self.assertIn("const returning = computeReturningRepairs();", html)
 
+    def test_large_database_storage_and_session_tab_safety_contract(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        html = (repo_root / "assets" / "pixel_repair_app.html").read_text(encoding="utf-8")
+        desktop = (repo_root / "src" / "pixel_repair_desktop.py").read_text(encoding="utf-8")
+
+        # localStorage mag de laad-/opslagflow nooit breken bij een volle quota.
+        self.assertIn("function safeSetItem(", html)
+        self.assertIn("function writeOptionalSnapshot(", html)
+        self.assertIn("const EXTRA_SNAPSHOT_SOFT_LIMIT_BYTES", html)
+        self.assertNotIn("localStorage.setItem(STORAGE_KEY", html)
+        self.assertNotIn("localStorage.setItem(LAST_SESSION_SNAPSHOT_KEY", html)
+        self.assertIn("writeOptionalSnapshot(MANUAL_SAVE_SNAPSHOT_KEY, lastManualSaveSnapshot);", html)
+
+        # Teruggekomen-berekening in één pass en met een gedeelde reparatielijst.
+        self.assertIn("function computeReturningRepairs(allRepairsArg)", html)
+        self.assertIn("function computeSessionReturns(session, allRepairsArg)", html)
+        self.assertIn("const returningList = computeReturningRepairs(allRepairs);", html)
+
+        # Snelheid: sorteer-sleutel cachen en lijsten in brokken renderen.
+        self.assertIn("row._sortMs = repairSortMs(row);", html)
+        self.assertIn("const SESSION_REPAIR_PAGE_SIZE", html)
+        self.assertIn("const SESSION_CARD_ROW_LIMIT", html)
+        self.assertIn("const SESSION_CARD_AUTO_COLLAPSE_THRESHOLD", html)
+        self.assertIn('id="sessionRepairShowMoreBtn"', html)
+        self.assertIn("data-show-more-card", html)
+
+        # Menubalk: Escape sluit het menu en aria-status blijft synchroon.
+        self.assertIn("document.querySelector('.menu-dropdown.show')", html)
+        self.assertIn("function syncMenuAria()", html)
+
+        # Desktop-poller stapelt geen runJavaScript-calls tijdens zware renders.
+        self.assertIn("self._desktop_poll_in_flight", desktop)
+
 
 if __name__ == "__main__":
     unittest.main()
